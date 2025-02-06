@@ -28,10 +28,10 @@ const transporter = nodemailer.createTransport({
  * @param {Object} context.collections Map of MongoDB collections
  * @returns {undefined}
  */
-export default function ordersStartup(context) {
+export default async function ordersStartup(context) {
   const { app, appEvents } = context;
-  let { collections } = context;
-  const { Orders } = collections;
+  let { collections, redis } = context;
+  const { Orders, Catalog } = collections;
   if (app.expressApp) {
 
     //add other middleware
@@ -56,9 +56,15 @@ export default function ordersStartup(context) {
       }
     })
   }
+  const catalogs = await Catalog.find({}).toArray()
+  for (let i = 0; i < catalogs.length; i++) {
+    console.log("catalogs[0] ", catalogs[0])
+    console.log("redis.set(catalogs[0]?.product?._id, catalogs[0]?.product, , 604800) ,",redis.set(catalogs[i]?.product?._id, catalogs[i]?.product, "EX", 604800))
+    await redis.set(catalogs[i]?.product?._id, JSON.stringify(catalogs[i]?.product), "EX", 604800); 
+  }
   console.log(decodeOpaqueId("cmVhY3Rpb24vdGFnOlF4SmVmTUEzdmlHbnF1azZZ"))
   console.log(decodeOpaqueId("cmVhY3Rpb24vdGFnOmFKOVQ2dFBIekU2aHNwZDA1OQ=="))
-  console.log("in api ",decodeOpaqueId("cmVhY3Rpb24vdGFnOmFKOVQ2dFBIekU2aHNwZDA2MA=="))
+  console.log("in api ", decodeOpaqueId("cmVhY3Rpb24vdGFnOmFKOVQ2dFBIekU2aHNwZDA2MA=="))
   function convertJsonToCsv(items, fields) {
     const hdr = fields
 
@@ -195,7 +201,7 @@ export default function ordersStartup(context) {
           '_id', 'orderTime', 'currencyCode', 'email', 'paymentMethod', 'placedFrom', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount',
         ];
         const canceledOrderFields = [
-          '_id', 'orderTime', 'currencyCode', 'email', 'paymentMethod', 'placedFrom','rejectionReason', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount',
+          '_id', 'orderTime', 'currencyCode', 'email', 'paymentMethod', 'placedFrom', 'rejectionReason', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount',
         ];
         const opts = { fields };
         // Filter orders for web and app

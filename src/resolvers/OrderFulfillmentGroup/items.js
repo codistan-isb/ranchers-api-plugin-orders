@@ -37,12 +37,13 @@ function sortOrderItems(orderItems, connectionArgs) {
  * @returns {Promise<Object>} A connection object
  */
 export default async function items(fulfillmentGroup, connectionArgs, context) {
+  
   let { items: orderItems } = fulfillmentGroup;
   if (!Array.isArray(orderItems) || orderItems.length === 0) return xformArrayToConnection(connectionArgs, []);
 
   // Apply requested sorting
   orderItems = sortOrderItems(orderItems, connectionArgs);
-  // console.log("orderItems ",orderItems)
+  console.log("orderItems ", orderItems)
   // console.log("xformArrayToConnection(connectionArgs, xformOrderItems(context, orderItems)); ",await xformArrayToConnection(connectionArgs, xformOrderItems(context, orderItems)))
 
   return xformArrayToConnection(connectionArgs, xformOrderItems(context, orderItems));

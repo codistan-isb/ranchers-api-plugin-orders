@@ -519,6 +519,8 @@ type OrderItem implements Node {
   variantTitle: String
 
   isDeal: Boolean
+
+  productImage: String
 }
 
 """
