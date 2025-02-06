@@ -517,6 +517,8 @@ type OrderItem implements Node {
 
   "The selected variant title"
   variantTitle: String
+
+  isDeal: Boolean
 }
 
 """

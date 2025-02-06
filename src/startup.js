@@ -9,6 +9,8 @@ import morgan from "morgan";
 import cron from 'node-cron';
 import nodemailer from "nodemailer";
 import fs from "fs";
+import { decodeCartOpaqueId } from "./xforms/id.js";
+import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
 const transporter = nodemailer.createTransport({
   host: process.env.BREVOHOST,
   port: 587,
@@ -54,6 +56,9 @@ export default function ordersStartup(context) {
       }
     })
   }
+  console.log(decodeOpaqueId("cmVhY3Rpb24vdGFnOlF4SmVmTUEzdmlHbnF1azZZ"))
+  console.log(decodeOpaqueId("cmVhY3Rpb24vdGFnOmFKOVQ2dFBIekU2aHNwZDA1OQ=="))
+  console.log("in api ",decodeOpaqueId("cmVhY3Rpb24vdGFnOmFKOVQ2dFBIekU2aHNwZDA2MA=="))
   function convertJsonToCsv(items, fields) {
     const hdr = fields
 

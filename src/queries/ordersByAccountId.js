@@ -37,6 +37,7 @@ export default async function ordersByAccountId(context, { accountId, OrderStatu
       ...query
     };
   }
+  console.log("Orders.find(query); ",await Orders.find(query))
 
   return Orders.find(query);
 }

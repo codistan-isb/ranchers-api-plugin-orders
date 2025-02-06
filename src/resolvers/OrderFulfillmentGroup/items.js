@@ -42,6 +42,8 @@ export default async function items(fulfillmentGroup, connectionArgs, context) {
 
   // Apply requested sorting
   orderItems = sortOrderItems(orderItems, connectionArgs);
+  // console.log("orderItems ",orderItems)
+  // console.log("xformArrayToConnection(connectionArgs, xformOrderItems(context, orderItems)); ",await xformArrayToConnection(connectionArgs, xformOrderItems(context, orderItems)))
 
   return xformArrayToConnection(connectionArgs, xformOrderItems(context, orderItems));
 }

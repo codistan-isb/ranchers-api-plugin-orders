@@ -8,12 +8,13 @@ export default async function xformOrderItems(context, items) {
     ...item,
     productConfiguration: {
       productId: item.productId,
-      productVariantId: item.variantId
+      productVariantId: item.variantId,
     },
     subtotal: {
       amount: item.subtotal,
-      currencyCode: item.price.currencyCode
-    }
+      currencyCode: item.price.currencyCode,
+    },
+    isDeal: item.productTagIds.includes("QxJefMA3viGnquk6Y") ? true : false,
   }));
 
   for (const mutateItems of context.getFunctionsOfType("xformOrderItems")) {
