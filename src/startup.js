@@ -59,8 +59,8 @@ export default async function ordersStartup(context) {
   const catalogs = await Catalog.find({}).toArray()
   for (let i = 0; i < catalogs.length; i++) {
     console.log("catalogs[0] ", catalogs[0])
-    console.log("redis.set(catalogs[0]?.product?._id, catalogs[0]?.product, , 604800) ,",redis.set(catalogs[i]?.product?._id, catalogs[i]?.product, "EX", 604800))
-    await redis.set(catalogs[i]?.product?._id, JSON.stringify(catalogs[i]?.product), "EX", 604800); 
+    console.log("redis.set(catalogs[0]?.product?._id, catalogs[0]?.product, , 604800) ,", redis.set(catalogs[i]?.product?._id, catalogs[i]?.product, "EX", 604800))
+    await redis.set(catalogs[i]?.product?._id, JSON.stringify(catalogs[i]?.product), "EX", 604800);
   }
   console.log(decodeOpaqueId("cmVhY3Rpb24vdGFnOlF4SmVmTUEzdmlHbnF1azZZ"))
   console.log(decodeOpaqueId("cmVhY3Rpb24vdGFnOmFKOVQ2dFBIekU2aHNwZDA1OQ=="))
@@ -108,75 +108,80 @@ export default async function ordersStartup(context) {
           {
             $addFields: {
               branchID: {
-                $toObjectId: "$branchID",
-              },
-            },
+                $toObjectId: "$branchID"
+              }
+            }
           },
           {
             $lookup: {
               from: "BranchData",
               localField: "branchID",
               foreignField: "_id",
-              as: "branchData",
-            },
+              as: "branchData"
+            }
           },
           {
             $addFields: {
               branchID: "$_id",
               branchInfo: {
-                $arrayElemAt: ["$branchData", 0],
-              },
-            },
+                $arrayElemAt: ["$branchData", 0]
+              }
+            }
           },
           {
             $addFields: {
               branchName: "$branchData.name",
-              branchAddress: "$branchData.address",
-            },
+              branchAddress: "$branchData.address"
+            }
           },
           {
-            $unwind: "$branchName",
+            $unwind: "$branchName"
           },
           {
-            $unwind: "$branchAddress",
+            $unwind: "$branchAddress"
           },
           {
             $addFields: {
-              amount: "$payments.amount",
+              amount: "$payments.totalAmount",
               tax: "$payments.tax",
+              delivery: 50,
               finalAmount: "$payments.finalAmount",
-              "status": "$workflow.status",
-            },
+              status: "$workflow.status"
+            }
           },
           {
             $addFields: {
               currencyCode: {
                 $cond: {
                   if: {
-                    $eq: ["$currencyCode", "USD"],
+                    $eq: ["$currencyCode", "USD"]
                   },
                   then: "PKR",
-                  else: "$currencyCode",
-                },
-              },
-            },
+                  else: "$currencyCode"
+                }
+              }
+            }
           },
           {
-            $unwind: "$tax",
+            $unwind: "$tax"
           },
           {
-            $unwind: "$amount",
+            $unwind: "$amount"
           },
           {
-            $unwind: "$finalAmount",
+            $unwind: "$finalAmount"
           },
-          { $sort: { createdAt: -1 } },
+          {
+            $sort: {
+              createdAt: -1
+            }
+          },
           {
             $addFields: {
               orderTime: {
-                $add: ["$createdAt", 5 * 60 * 60000], // Add 5 hours in milliseconds to createdAt
-              },
-            },
+                $add: ["$createdAt", 5 * 60 * 60000] // Add 5 hours in milliseconds to createdAt
+              }
+            }
           },
           {
             $project: {
@@ -186,14 +191,15 @@ export default async function ordersStartup(context) {
               paymentMethod: -1,
               currencyCode: -1,
               tax: -1,
+              delivery: -1,
               amount: -1,
               finalAmount: -1,
               placedFrom: -1,
               rejectionReason: -1,
               status: -1,
-              orderTime: 1, // Add this field to output to show the adjusted time
-            },
-          },
+              orderTime: 1 // Add this field to output to show the adjusted time
+            }
+          }
         ]
         const todayOrders = await Orders.aggregate(aggregationPipeline).toArray();
         console.log("todayOrders ", todayOrders)
@@ -240,6 +246,7 @@ export default async function ordersStartup(context) {
             "harisbakhabarpk@gmail.com",
             "mwaseemkha@gmail.com",
             "nadirw70@gmail.com",
+            "hamzakiani666k@gmail.com",
             "ZoahibKahlid575@gmail.com"
           ].join(","),
           subject: "Daily Orders Report",
@@ -272,6 +279,133 @@ export default async function ordersStartup(context) {
       }
     });
   }
+  const aggregationPipeline = [
+    {
+      $match: {
+        createdAt: {
+          $gte: new Date(new Date().setDate(new Date().getDate() - 1))
+        },
+        placedFrom: "web"
+      }
+    },
+    {
+      $addFields: {
+        branchObjectId: {
+          $toObjectId: "$branchID"
+        }
+      }
+    },
+    {
+      $lookup: {
+        from: "BranchData",
+        localField: "branchObjectId",
+        foreignField: "_id",
+        as: "branch"
+      }
+    },
+    { $unwind: "$branch" },
+    { $unwind: "$shipping" },
+    { $unwind: "$shipping.items" },
+    {
+      $group: {
+        _id: {
+          productName: "$shipping.items.title",
+          branchName: "$branch.name",
+          date: {
+            $dateToString: {
+              format: "%d-%m-%Y",
+              date: "$createdAt"
+            }
+          }
+        },
+        totalOrders: { $sum: 1 },
+        totalAmount: { $sum: "$shipping.items.subtotal" },
+        orderIds: { $push: "$_id" }
+      }
+    },
+    {
+      $project: {
+        _id: 0,
+        productName: "$_id.productName",
+        branchName: "$_id.branchName",
+        date: "$_id.date",
+        totalOrders: 1,
+        totalAmount: 1,
+        orderIds: 1
+      }
+    },
+    { $sort: { date: -1, totalAmount: -1 } }
+  ];
+
+  const BranchProductBasedRevenueRevenue = await Orders.aggregate(aggregationPipeline).toArray();
+  console.log("BranchProductBasedRevenueRevenue:", BranchProductBasedRevenueRevenue);
+
+  const allOrdersAggregationPipeline = [
+    {
+      $match: {
+        createdAt: {
+          $gte: new Date(new Date().setDate(new Date().getDate() - 10))
+        },
+        placedFrom: "web"
+      }
+    }
+  ];
+
+  const RanchersOrdersAll = await Orders.aggregate(allOrdersAggregationPipeline).toArray();
+  // console.log("RanchersOrdersAll:", RanchersOrdersAll);
+
+  // Attach payment details from RanchersOrdersAll to BranchProductBasedRevenueRevenue
+  const updatedResults = BranchProductBasedRevenueRevenue.map(item => {
+    console.log("item.orderIds ", item.orderIds);
+
+    const matchedOrders = RanchersOrdersAll.filter(order => item.orderIds.includes(order._id));
+
+    console.log("matchedOrders ", matchedOrders[0]);
+
+    if (matchedOrders.length > 0) {
+      // Extract first matched order
+      const firstOrder = matchedOrders[0];
+
+      // Extract payment details
+      const firstPayment = firstOrder.payments?.[0]; // Assuming we use the first payment object
+
+      if (firstPayment) {
+        const totalAmount = firstPayment.totalAmount || 1; // Avoid division by zero
+        const tax = firstPayment.tax || 0;
+
+        // Calculate tax percentage
+        const taxPercentage = (tax / totalAmount) * 100;
+
+        // Compute tax amount for this product using tax percentage
+        const computedTax = (item.totalAmount * taxPercentage) / 100;
+
+        // Compute final amount (totalAmount + tax)
+        const finalAmount = item.totalAmount + computedTax;
+
+        const finalObject = {
+          ...item,
+          payments: matchedOrders.map(order => order.payments),
+          taxPercentage: taxPercentage.toFixed(2), // Rounded to 2 decimal places
+          computedTax: computedTax.toFixed(2), // Rounded tax amount
+          finalAmount: finalAmount.toFixed(2) // Total including tax
+        };
+
+        console.log("finalObject ", finalObject);
+        return finalObject;
+      }
+    }
+
+    // Default return in case there are no matching payments
+    return {
+      ...item,
+      payments: [],
+      taxPercentage: "0.00",
+      computedTax: "0.00",
+      finalAmount: item.totalAmount.toFixed(2)
+    };
+  });
+  console.log("updatedResults[0] ",updatedResults[0])
+
 
 
 
