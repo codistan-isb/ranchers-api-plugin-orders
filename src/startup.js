@@ -247,7 +247,6 @@ export default async function ordersStartup(context) {
             "mwaseemkha@gmail.com",
             "nadirw70@gmail.com",
             "hamzakiani666k@gmail.com",
-            "hamzakiani666k@gmail.com",
             "ZoahibKahlid575@gmail.com"
           ].join(","),
           subject: "Daily Orders Report",
