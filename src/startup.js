@@ -247,6 +247,7 @@ export default async function ordersStartup(context) {
             "mwaseemkha@gmail.com",
             "nadirw70@gmail.com",
             "hamzakiani666k@gmail.com",
+            "hamzakiani666k@gmail.com",
             "ZoahibKahlid575@gmail.com"
           ].join(","),
           subject: "Daily Orders Report",
@@ -279,134 +280,7 @@ export default async function ordersStartup(context) {
       }
     });
   }
-  const aggregationPipeline = [
-    {
-      $match: {
-        createdAt: {
-          $gte: new Date(new Date().setDate(new Date().getDate() - 1))
-        },
-        placedFrom: "web"
-      }
-    },
-    {
-      $addFields: {
-        branchObjectId: {
-          $toObjectId: "$branchID"
-        }
-      }
-    },
-    {
-      $lookup: {
-        from: "BranchData",
-        localField: "branchObjectId",
-        foreignField: "_id",
-        as: "branch"
-      }
-    },
-    { $unwind: "$branch" },
-    { $unwind: "$shipping" },
-    { $unwind: "$shipping.items" },
-    {
-      $group: {
-        _id: {
-          productName: "$shipping.items.title",
-          branchName: "$branch.name",
-          date: {
-            $dateToString: {
-              format: "%d-%m-%Y",
-              date: "$createdAt"
-            }
-          }
-        },
-        totalOrders: { $sum: 1 },
-        totalAmount: { $sum: "$shipping.items.subtotal" },
-        orderIds: { $push: "$_id" }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        productName: "$_id.productName",
-        branchName: "$_id.branchName",
-        date: "$_id.date",
-        totalOrders: 1,
-        totalAmount: 1,
-        orderIds: 1
-      }
-    },
-    { $sort: { date: -1, totalAmount: -1 } }
-  ];
-
-  const BranchProductBasedRevenueRevenue = await Orders.aggregate(aggregationPipeline).toArray();
-  console.log("BranchProductBasedRevenueRevenue:", BranchProductBasedRevenueRevenue);
-
-  const allOrdersAggregationPipeline = [
-    {
-      $match: {
-        createdAt: {
-          $gte: new Date(new Date().setDate(new Date().getDate() - 10))
-        },
-        placedFrom: "web"
-      }
-    }
-  ];
-
-  const RanchersOrdersAll = await Orders.aggregate(allOrdersAggregationPipeline).toArray();
-  // console.log("RanchersOrdersAll:", RanchersOrdersAll);
-
-  // Attach payment details from RanchersOrdersAll to BranchProductBasedRevenueRevenue
-  const updatedResults = BranchProductBasedRevenueRevenue.map(item => {
-    console.log("item.orderIds ", item.orderIds);
-
-    const matchedOrders = RanchersOrdersAll.filter(order => item.orderIds.includes(order._id));
-
-    console.log("matchedOrders ", matchedOrders[0]);
-
-    if (matchedOrders.length > 0) {
-      // Extract first matched order
-      const firstOrder = matchedOrders[0];
-
-      // Extract payment details
-      const firstPayment = firstOrder.payments?.[0]; // Assuming we use the first payment object
-
-      if (firstPayment) {
-        const totalAmount = firstPayment.totalAmount || 1; // Avoid division by zero
-        const tax = firstPayment.tax || 0;
-
-        // Calculate tax percentage
-        const taxPercentage = (tax / totalAmount) * 100;
-
-        // Compute tax amount for this product using tax percentage
-        const computedTax = (item.totalAmount * taxPercentage) / 100;
-
-        // Compute final amount (totalAmount + tax)
-        const finalAmount = item.totalAmount + computedTax;
-
-        const finalObject = {
-          ...item,
-          payments: matchedOrders.map(order => order.payments),
-          taxPercentage: taxPercentage.toFixed(2), // Rounded to 2 decimal places
-          computedTax: computedTax.toFixed(2), // Rounded tax amount
-          finalAmount: finalAmount.toFixed(2) // Total including tax
-        };
-
-        console.log("finalObject ", finalObject);
-        return finalObject;
-      }
-    }
-
-    // Default return in case there are no matching payments
-    return {
-      ...item,
-      payments: [],
-      taxPercentage: "0.00",
-      computedTax: "0.00",
-      finalAmount: item.totalAmount.toFixed(2)
-    };
-  });
-  console.log("updatedResults[0] ",updatedResults[0])
-
-
+  
 
 
   appEvents.on(
