@@ -286,14 +286,14 @@ export default async function ordersStartup(context) {
         const email = {
           from: "muhammad.usama@ranchercafe.com",
           to: [
-            // "haris.ghumman46@gmail.com",
-            // "aliasadwarraich29@gmail.com",
-            // "stasawfi787@gmail.com",
+            "haris.ghumman46@gmail.com",
+            "aliasadwarraich29@gmail.com",
+            "stasawfi787@gmail.com",
             "harisbakhabarpk@gmail.com",
-            // "mwaseemkha@gmail.com",
-            // "nadirw70@gmail.com",
-            // "hamzakiani666k@gmail.com",
-            // "ZoahibKahlid575@gmail.com"
+            "mwaseemkha@gmail.com",
+            "nadirw70@gmail.com",
+            "hamzakiani666k@gmail.com",
+            "ZoahibKahlid575@gmail.com"
           ].join(","),
           subject: "Daily Orders Report",
           text: "This is the daily orders report",
