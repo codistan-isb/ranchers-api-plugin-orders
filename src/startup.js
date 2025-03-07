@@ -98,156 +98,202 @@ export default async function ordersStartup(context) {
         console.log("last24Hours ", last24Hours)
         const aggregationPipeline = [
           {
-            $match: {
-              createdAt: {
-                $gte: last24Hours,
-                $lte: now
-              },
-            },
-          },
-          {
-            $addFields: {
-              branchID: {
-                $toObjectId: "$branchID"
-              }
-            }
-          },
-          {
-            $lookup: {
-              from: "BranchData",
-              localField: "branchID",
-              foreignField: "_id",
-              as: "branchData"
-            }
-          },
-          {
-            $addFields: {
-              branchID: "$_id",
-              branchInfo: {
-                $arrayElemAt: ["$branchData", 0]
-              }
-            }
-          },
-          {
-            $addFields: {
-              branchName: "$branchData.name",
-              branchAddress: "$branchData.address"
-            }
-          },
-          {
-            $unwind: "$branchName"
-          },
-          {
-            $unwind: "$branchAddress"
-          },
-          {
-            $addFields: {
-              amount: "$payments.totalAmount",
-              tax: "$payments.tax",
-              delivery: 50,
-              finalAmount: "$payments.finalAmount",
-              status: "$workflow.status"
-            }
-          },
-          {
-            $addFields: {
-              currencyCode: {
-                $cond: {
-                  if: {
-                    $eq: ["$currencyCode", "USD"]
+              $match: {
+                  createdAt: {
+                      $gte: last24Hours,
+                      $lte: now
                   },
-                  then: "PKR",
-                  else: "$currencyCode"
-                }
               }
-            }
           },
           {
-            $unwind: "$tax"
-          },
-          {
-            $unwind: "$amount"
-          },
-          {
-            $unwind: "$finalAmount"
-          },
-          {
-            $sort: {
-              createdAt: -1
-            }
-          },
-          {
-            $addFields: {
-              orderTime: {
-                $add: ["$createdAt", 5 * 60 * 60000] // Add 5 hours in milliseconds to createdAt
+              $addFields: {
+                  branchID: {
+                      $toObjectId: "$branchID"
+                  }
               }
-            }
           },
           {
-            $project: {
-              branchName: -1,
-              branchAddress: -1,
-              email: -1,
-              paymentMethod: -1,
-              currencyCode: -1,
-              tax: -1,
-              delivery: -1,
-              amount: -1,
-              finalAmount: -1,
-              placedFrom: -1,
-              rejectionReason: -1,
-              status: -1,
-              orderTime: 1 // Add this field to output to show the adjusted time
-            }
+              $lookup: {
+                  from: "BranchData",
+                  localField: "branchID",
+                  foreignField: "_id",
+                  as: "branchData"
+              }
+          },
+          {
+              $addFields: {
+                  branchInfo: {
+                      $arrayElemAt: ["$branchData", 0]
+                  }
+              }
+          },
+          {
+              $addFields: {
+                  branchName: "$branchInfo.name",
+                  branchAddress: "$branchInfo.address"
+              }
+          },
+          {
+              $addFields: {
+                  amount: {
+                      $arrayElemAt: ["$payments.totalAmount", 0]
+                  },
+                  tax: {
+                      $arrayElemAt: ["$payments.tax", 0]
+                  },
+                  finalAmount: {
+                      $arrayElemAt: ["$payments.finalAmount", 0]
+                  },
+                  status: "$workflow.status",
+                  contactNumber: {
+                      $arrayElemAt: [
+                          "$payments.address.phone",
+                          0
+                      ]
+                  },
+                  phonenumber: {
+                      $arrayElemAt: [
+                          "$shipping.address.phone",
+                          0
+                      ]
+                  },
+                  deliveryAddress: {
+                      $arrayElemAt: [
+                          "$shipping.address.address1",
+                          0
+                      ]
+                  },
+                  productName: {
+                      $arrayElemAt: ["$shipping.items.title", 0]
+                  },
+              }
+          },
+          {
+              $addFields: {
+                  currencyCode: {
+                      $cond: {
+                          if: {
+                              $eq: ["$currencyCode", "USD"]
+                          },
+                          then: "PKR",
+                          else: "$currencyCode"
+                      }
+                  }
+              }
+          },
+          {
+              $sort: {
+                  createdAt: -1
+              }
+          },
+          {
+              $addFields: {
+                  orderTime: {
+                      $add: ["$createdAt", 5 * 60 * 60000]
+                  }
+              }
+          },
+          {
+              $project: {
+                  orderTime: 1,
+                  contactNumber: 1,
+                  email: 1,
+                  phonenumber: 1,
+                  deliveryAddress: 1,
+                  paymentMethod: 1,
+                  placedFrom: 1,
+                  branchName: 1,
+                  branchAddress: 1,
+                  tax: 1,
+                  amount: 1,
+                  finalAmount: 1,
+                  currencyCode: 1,
+                  rejectionReason: 1,
+                  status: 1,
+                  productName: -1,
+                  items: "$shipping.items"
+              }
           }
-        ]
-        const todayOrders = await Orders.aggregate(aggregationPipeline).toArray();
-        console.log("todayOrders ", todayOrders)
-        const fields = [
-          '_id', 'orderTime', 'currencyCode', 'email', 'paymentMethod', 'placedFrom', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount',
-        ];
-        const canceledOrderFields = [
-          '_id', 'orderTime', 'currencyCode', 'email', 'paymentMethod', 'placedFrom', 'rejectionReason', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount',
-        ];
-        const opts = { fields };
-        // Filter orders for web and app
-        const webOrders = todayOrders.filter(order => order.placedFrom === 'web');
-        const appOrders = todayOrders.filter(order => order.placedFrom === 'app');
-        const canceledOrders = todayOrders.filter(order => order.status === 'canceled');
+      ]
 
-        // Convert to CSV
-        const todayOrdersCsv = convertJsonToCsv(todayOrders, fields);
-        const webOrdersCsv = convertJsonToCsv(webOrders, fields);
-        const appOrdersCsv = convertJsonToCsv(appOrders, fields);
-        const canceledOrdersCsv = convertJsonToCsv(canceledOrders, canceledOrderFields);
+      const NewOrdersTemplate = await Orders.aggregate(aggregationPipeline).toArray();
+      console.log("NewOrdersTemplate:", NewOrdersTemplate);
+      const dealNames = ["Tamasha Champions Deal", "Hunger Buster", "Happiness Squared Deal", "Any 2 Deal", "Two For You"];
 
-        // Save CSV to files
-        fs.writeFileSync('./todayOrders.csv', todayOrdersCsv);
-        fs.writeFileSync('./webOrders.csv', webOrdersCsv);
-        fs.writeFileSync('./appOrders.csv', appOrdersCsv);
-        fs.writeFileSync('./canceledOrders.csv', canceledOrdersCsv);
-        //console.log("csv ", csv)
-        // console.log(csv);
-        // Save CSV to a file
-        const filePath = './todayOrders.csv';
-        fs.writeFileSync(filePath, todayOrdersCsv);
-        const webFilePath = './todayWebOrders.csv';
-        fs.writeFileSync(webFilePath, webOrdersCsv);
-        const appFilePath = './todayAppOrders.csv';
-        fs.writeFileSync(appFilePath, appOrdersCsv);
-        const canceledFilePath = './canceledOrders.csv';
-        fs.writeFileSync(canceledFilePath, canceledOrdersCsv);
+      const formattedOrders = NewOrdersTemplate.map(order => {
+          const items = order.items?.[0] || []; // Extracting items array from nested array
+
+          let formattedProductNames = [];
+          let formattedDealNames = [];
+
+          items.forEach(item => {
+              const formattedItem = `${item.title} x ${item.quantity}`;
+              const normalizedTitle = item.title.trim(); // Trim spaces
+
+              console.log("Checking:", `"${normalizedTitle}"`, "against dealNames:", dealNames);
+              console.log("Match:", dealNames.includes(normalizedTitle));
+
+              if (dealNames.includes(normalizedTitle)) {
+                  formattedDealNames.push(formattedItem);
+              } else {
+                  formattedProductNames.push(formattedItem);
+              }
+          });
+
+          return {
+              ...order,
+              productName: formattedProductNames.join(', '),
+              dealName: formattedDealNames.join(', ')
+          };
+      });
+
+
+      console.log("Formatted Orders:", formattedOrders);
+      const fields = [
+          '_id', 'orderTime', 'contactNumber', 'phonenumber', 'email', 'deliveryAddress', 'paymentMethod', 'placedFrom', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount', 'productName', 'dealName'
+      ];
+      const canceledOrderFields = [
+          '_id', 'orderTime', 'contactNumber', 'phonenumber', 'email', 'deliveryAddress', 'paymentMethod', 'placedFrom', 'rejectionReason', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount', 'productName', 'dealName'
+      ];
+      const opts = { fields };
+      // Filter orders for web and app
+      const webOrders = formattedOrders.filter(order => order.placedFrom === 'web');
+      const appOrders = formattedOrders.filter(order => order.placedFrom === 'app');
+      const canceledOrders = formattedOrders.filter(order => order.status === 'canceled');
+
+      // Convert to CSV
+      const todayOrdersCsv = convertJsonToCsv(formattedOrders, fields);
+      const webOrdersCsv = convertJsonToCsv(webOrders, fields);
+      const appOrdersCsv = convertJsonToCsv(appOrders, fields);
+      const canceledOrdersCsv = convertJsonToCsv(canceledOrders, canceledOrderFields);
+
+      // Save CSV to files
+      fs.writeFileSync('./todayOrders.csv', todayOrdersCsv);
+      fs.writeFileSync('./webOrders.csv', webOrdersCsv);
+      fs.writeFileSync('./appOrders.csv', appOrdersCsv);
+      fs.writeFileSync('./canceledOrders.csv', canceledOrdersCsv);
+      //console.log("csv ", csv)
+      // console.log(csv);
+      // Save CSV to a file
+      const filePath = './todayOrders.csv';
+      fs.writeFileSync(filePath, todayOrdersCsv);
+      const webFilePath = './todayWebOrders.csv';
+      fs.writeFileSync(webFilePath, webOrdersCsv);
+      const appFilePath = './todayAppOrders.csv';
+      fs.writeFileSync(appFilePath, appOrdersCsv);
+      const canceledFilePath = './canceledOrders.csv';
+      fs.writeFileSync(canceledFilePath, canceledOrdersCsv);
         const email = {
           from: "muhammad.usama@ranchercafe.com",
           to: [
-            "haris.ghumman46@gmail.com",
-            "aliasadwarraich29@gmail.com",
-            "stasawfi787@gmail.com",
+            // "haris.ghumman46@gmail.com",
+            // "aliasadwarraich29@gmail.com",
+            // "stasawfi787@gmail.com",
             "harisbakhabarpk@gmail.com",
-            "mwaseemkha@gmail.com",
-            "nadirw70@gmail.com",
-            "hamzakiani666k@gmail.com",
-            "ZoahibKahlid575@gmail.com"
+            // "mwaseemkha@gmail.com",
+            // "nadirw70@gmail.com",
+            // "hamzakiani666k@gmail.com",
+            // "ZoahibKahlid575@gmail.com"
           ].join(","),
           subject: "Daily Orders Report",
           text: "This is the daily orders report",
