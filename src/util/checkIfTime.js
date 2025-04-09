@@ -1,6 +1,6 @@
 import moment from 'moment-timezone';
 export default async function checkIfTime(startTime, endTime) {
-    startTime = startTime || "11:45 AM"; // Start time
+    startTime = startTime || "11:15 AM"; // Start time
     endTime = endTime || "01:00 AM"; // End time on the next day
 
     const pakistanDate = moment().tz('Asia/Karachi'); // Get current Pakistan time

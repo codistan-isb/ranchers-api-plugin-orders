@@ -1246,5 +1246,5 @@ input OrderFilterInput {
   status: OrderStatusValue
 }
 type Subscription {
-  newOrder: OrderNew
+  newOrder(branchID: ID): OrderNew
 }

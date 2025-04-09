@@ -26,7 +26,25 @@ export default {
   Refund,
   Subscription: {
     newOrder: {
-      subscribe: () => pubSub.asyncIterator(["ORDER_CREATED"]),
+      subscribe: (_, { branchID }) => {
+        // If branchID is provided, filter events for that branch
+        if (branchID) {
+          return {
+            async *[Symbol.asyncIterator]() {
+              const asyncIterator = pubSub.asyncIterator(["ORDER_CREATED"]);
+              for await (const value of asyncIterator) {
+                // Only yield this event if it matches the requested branchID
+                if (value.newOrder && value.newOrder.branchID === branchID) {
+                  yield value;
+                }
+              }
+            }
+          };
+        }
+        
+        // If no branchID, return all order events
+        return pubSub.asyncIterator(["ORDER_CREATED"]);
+      },
     },
   },
   SplitOrderItemPayload: {

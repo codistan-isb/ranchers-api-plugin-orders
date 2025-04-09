@@ -708,10 +708,10 @@ export default async function placeOrder(context, input) {
     }
   ]).toArray();
   console.log("ordersResp[0] ",ordersResp[0])
-  const newEvent=await pubSub.publish("ORDER_CREATED", {
+  pubSub.publish("ORDER_CREATED", {
     newOrder: ordersResp[0]
   });
-  console.log("newEvent ",newEvent)
+  // console.log("newEvent ",newEvent)
   // sendOrderEmail(context, order, "new");
   // const message = "Your order has been placed";
   // const appType = "customer";
