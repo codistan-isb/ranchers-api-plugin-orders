@@ -98,191 +98,199 @@ export default async function ordersStartup(context) {
         console.log("last24Hours ", last24Hours)
         const aggregationPipeline = [
           {
-              $match: {
-                  createdAt: {
-                      $gte: last24Hours,
-                      $lte: now
+            $match: {
+              createdAt: {
+                $gte: last24Hours,
+                $lte: now
+              },
+            }
+          },
+          {
+            $addFields: {
+              branchID: {
+                $toObjectId: "$branchID"
+              }
+            }
+          },
+          {
+            $lookup: {
+              from: "BranchData",
+              localField: "branchID",
+              foreignField: "_id",
+              as: "branchData"
+            }
+          },
+          {
+            $addFields: {
+              branchInfo: {
+                $arrayElemAt: ["$branchData", 0]
+              }
+            }
+          },
+          {
+            $addFields: {
+              branchName: "$branchInfo.name",
+              branchAddress: "$branchInfo.address"
+            }
+          },
+          {
+            $addFields: {
+              amount: {
+                $arrayElemAt: ["$payments.totalAmount", 0]
+              },
+              tax: {
+                $arrayElemAt: ["$payments.tax", 0]
+              },
+              finalAmount: {
+                $arrayElemAt: ["$payments.finalAmount", 0]
+              },
+              status: "$workflow.status",
+              contactNumber: {
+                $arrayElemAt: [
+                  "$payments.address.phone",
+                  0
+                ]
+              },
+              phonenumber: {
+                $arrayElemAt: [
+                  "$shipping.address.phone",
+                  0
+                ]
+              },
+              deliveryAddress: {
+                $arrayElemAt: [
+                  "$shipping.address.address1",
+                  0
+                ]
+              },
+              productName: {
+                $arrayElemAt: ["$shipping.items.title", 0]
+              },
+            }
+          },
+          {
+            $addFields: {
+              notes: {
+                $arrayElemAt: ["$notes.content", 0]
+              }
+            }
+          },
+          {
+            $addFields: {
+              currencyCode: {
+                $cond: {
+                  if: {
+                    $eq: ["$currencyCode", "USD"]
                   },
+                  then: "PKR",
+                  else: "$currencyCode"
+                }
               }
+            }
           },
           {
-              $addFields: {
-                  branchID: {
-                      $toObjectId: "$branchID"
-                  }
-              }
+            $sort: {
+              createdAt: -1
+            }
           },
           {
-              $lookup: {
-                  from: "BranchData",
-                  localField: "branchID",
-                  foreignField: "_id",
-                  as: "branchData"
+            $addFields: {
+              orderTime: {
+                $add: ["$createdAt", 5 * 60 * 60000]
               }
+            }
           },
           {
-              $addFields: {
-                  branchInfo: {
-                      $arrayElemAt: ["$branchData", 0]
-                  }
-              }
-          },
-          {
-              $addFields: {
-                  branchName: "$branchInfo.name",
-                  branchAddress: "$branchInfo.address"
-              }
-          },
-          {
-              $addFields: {
-                  amount: {
-                      $arrayElemAt: ["$payments.totalAmount", 0]
-                  },
-                  tax: {
-                      $arrayElemAt: ["$payments.tax", 0]
-                  },
-                  finalAmount: {
-                      $arrayElemAt: ["$payments.finalAmount", 0]
-                  },
-                  status: "$workflow.status",
-                  contactNumber: {
-                      $arrayElemAt: [
-                          "$payments.address.phone",
-                          0
-                      ]
-                  },
-                  phonenumber: {
-                      $arrayElemAt: [
-                          "$shipping.address.phone",
-                          0
-                      ]
-                  },
-                  deliveryAddress: {
-                      $arrayElemAt: [
-                          "$shipping.address.address1",
-                          0
-                      ]
-                  },
-                  productName: {
-                      $arrayElemAt: ["$shipping.items.title", 0]
-                  },
-              }
-          },
-          {
-              $addFields: {
-                  currencyCode: {
-                      $cond: {
-                          if: {
-                              $eq: ["$currencyCode", "USD"]
-                          },
-                          then: "PKR",
-                          else: "$currencyCode"
-                      }
-                  }
-              }
-          },
-          {
-              $sort: {
-                  createdAt: -1
-              }
-          },
-          {
-              $addFields: {
-                  orderTime: {
-                      $add: ["$createdAt", 5 * 60 * 60000]
-                  }
-              }
-          },
-          {
-              $project: {
-                  orderTime: 1,
-                  contactNumber: 1,
-                  email: 1,
-                  phonenumber: 1,
-                  deliveryAddress: 1,
-                  paymentMethod: 1,
-                  placedFrom: 1,
-                  branchName: 1,
-                  branchAddress: 1,
-                  tax: 1,
-                  amount: 1,
-                  finalAmount: 1,
-                  currencyCode: 1,
-                  rejectionReason: 1,
-                  status: 1,
-                  productName: -1,
-                  items: "$shipping.items"
-              }
+            $project: {
+              orderTime: 1,
+              contactNumber: 1,
+              email: 1,
+              phonenumber: 1,
+              deliveryAddress: 1,
+              paymentMethod: 1,
+              placedFrom: 1,
+              branchName: 1,
+              branchAddress: 1,
+              tax: 1,
+              amount: 1,
+              finalAmount: 1,
+              currencyCode: 1,
+              rejectionReason: 1,
+              status: 1,
+              productName: -1,
+              items: "$shipping.items",
+              notes: 1
+            }
           }
-      ]
+        ]
 
-      const NewOrdersTemplate = await Orders.aggregate(aggregationPipeline).toArray();
-      console.log("NewOrdersTemplate:", NewOrdersTemplate);
-      const dealNames = ["Tamasha Champions Deal", "Hunger Buster", "Happiness Squared Deal", "Any 2 Deal", "Two For You"];
+        const NewOrdersTemplate = await Orders.aggregate(aggregationPipeline).toArray();
+        console.log("NewOrdersTemplate:", NewOrdersTemplate);
+        const dealNames = ["Tamasha Champions Deal", "Hunger Buster", "Happiness Squared Deal", "Any 2 Deal", "Two For You"];
 
-      const formattedOrders = NewOrdersTemplate.map(order => {
+        const formattedOrders = NewOrdersTemplate.map(order => {
           const items = order.items?.[0] || []; // Extracting items array from nested array
 
           let formattedProductNames = [];
           let formattedDealNames = [];
 
           items.forEach(item => {
-              const formattedItem = `${item.title} x ${item.quantity}`;
-              const normalizedTitle = item.title.trim(); // Trim spaces
+            const formattedItem = `${item.title} x ${item.quantity}`;
+            const normalizedTitle = item.title.trim(); // Trim spaces
 
-              console.log("Checking:", `"${normalizedTitle}"`, "against dealNames:", dealNames);
-              console.log("Match:", dealNames.includes(normalizedTitle));
+            console.log("Checking:", `"${normalizedTitle}"`, "against dealNames:", dealNames);
+            console.log("Match:", dealNames.includes(normalizedTitle));
 
-              if (dealNames.includes(normalizedTitle)) {
-                  formattedDealNames.push(formattedItem);
-              } else {
-                  formattedProductNames.push(formattedItem);
-              }
+            if (dealNames.includes(normalizedTitle)) {
+              formattedDealNames.push(formattedItem);
+            } else {
+              formattedProductNames.push(formattedItem);
+            }
           });
 
           return {
-              ...order,
-              productName: formattedProductNames.join(', '),
-              dealName: formattedDealNames.join(', ')
+            ...order,
+            productName: formattedProductNames.join(', '),
+            dealName: formattedDealNames.join(', ')
           };
-      });
+        });
 
 
-      console.log("Formatted Orders:", formattedOrders);
-      const fields = [
-          '_id', 'orderTime', 'contactNumber', 'phonenumber', 'email', 'deliveryAddress', 'paymentMethod', 'placedFrom', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount', 'productName', 'dealName'
-      ];
-      const canceledOrderFields = [
-          '_id', 'orderTime', 'contactNumber', 'phonenumber', 'email', 'deliveryAddress', 'paymentMethod', 'placedFrom', 'rejectionReason', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount', 'productName', 'dealName'
-      ];
-      const opts = { fields };
-      // Filter orders for web and app
-      const webOrders = formattedOrders.filter(order => order.placedFrom === 'web');
-      const appOrders = formattedOrders.filter(order => order.placedFrom === 'app');
-      const canceledOrders = formattedOrders.filter(order => order.status === 'canceled');
+        console.log("Formatted Orders:", formattedOrders);
+        const fields = [
+          '_id', 'orderTime', 'contactNumber', 'phonenumber', 'email', 'deliveryAddress', 'paymentMethod', 'placedFrom', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount', 'productName', 'dealName','notes'
+        ];
+        const canceledOrderFields = [
+          '_id', 'orderTime', 'contactNumber', 'phonenumber', 'email', 'deliveryAddress', 'paymentMethod', 'placedFrom', 'rejectionReason', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount', 'productName', 'dealName','notes'
+        ];
+        const opts = { fields };
+        // Filter orders for web and app
+        const webOrders = formattedOrders.filter(order => order.placedFrom === 'web');
+        const appOrders = formattedOrders.filter(order => order.placedFrom === 'app');
+        const canceledOrders = formattedOrders.filter(order => order.status === 'canceled');
 
-      // Convert to CSV
-      const todayOrdersCsv = convertJsonToCsv(formattedOrders, fields);
-      const webOrdersCsv = convertJsonToCsv(webOrders, fields);
-      const appOrdersCsv = convertJsonToCsv(appOrders, fields);
-      const canceledOrdersCsv = convertJsonToCsv(canceledOrders, canceledOrderFields);
+        // Convert to CSV
+        const todayOrdersCsv = convertJsonToCsv(formattedOrders, fields);
+        const webOrdersCsv = convertJsonToCsv(webOrders, fields);
+        const appOrdersCsv = convertJsonToCsv(appOrders, fields);
+        const canceledOrdersCsv = convertJsonToCsv(canceledOrders, canceledOrderFields);
 
-      // Save CSV to files
-      fs.writeFileSync('./todayOrders.csv', todayOrdersCsv);
-      fs.writeFileSync('./webOrders.csv', webOrdersCsv);
-      fs.writeFileSync('./appOrders.csv', appOrdersCsv);
-      fs.writeFileSync('./canceledOrders.csv', canceledOrdersCsv);
-      //console.log("csv ", csv)
-      // console.log(csv);
-      // Save CSV to a file
-      const filePath = './todayOrders.csv';
-      fs.writeFileSync(filePath, todayOrdersCsv);
-      const webFilePath = './todayWebOrders.csv';
-      fs.writeFileSync(webFilePath, webOrdersCsv);
-      const appFilePath = './todayAppOrders.csv';
-      fs.writeFileSync(appFilePath, appOrdersCsv);
-      const canceledFilePath = './canceledOrders.csv';
-      fs.writeFileSync(canceledFilePath, canceledOrdersCsv);
+        // Save CSV to files
+        fs.writeFileSync('./todayOrders.csv', todayOrdersCsv);
+        fs.writeFileSync('./webOrders.csv', webOrdersCsv);
+        fs.writeFileSync('./appOrders.csv', appOrdersCsv);
+        fs.writeFileSync('./canceledOrders.csv', canceledOrdersCsv);
+        //console.log("csv ", csv)
+        // console.log(csv);
+        // Save CSV to a file
+        const filePath = './todayOrders.csv';
+        fs.writeFileSync(filePath, todayOrdersCsv);
+        const webFilePath = './todayWebOrders.csv';
+        fs.writeFileSync(webFilePath, webOrdersCsv);
+        const appFilePath = './todayAppOrders.csv';
+        fs.writeFileSync(appFilePath, appOrdersCsv);
+        const canceledFilePath = './canceledOrders.csv';
+        fs.writeFileSync(canceledFilePath, canceledOrdersCsv);
         const email = {
           from: "muhammad.usama@ranchercafe.com",
           to: [
@@ -325,7 +333,7 @@ export default async function ordersStartup(context) {
       }
     });
   }
-  
+
 
 
   appEvents.on(
