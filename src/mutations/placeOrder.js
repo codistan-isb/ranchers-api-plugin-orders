@@ -59,6 +59,7 @@ async function
     shippingAddress,
     shop,
     taxPercentage,
+    fulfillmentType
   }) {
   // console.log("paymentsInput create Payment ", paymentsInput)
 
@@ -76,8 +77,17 @@ async function
       method: methodName,
       tax,
       totalAmount,
-      finalAmount,
     } = paymentInput;
+
+    // Calculate finalAmount based on fulfillment type
+    let finalAmount;
+    console.log("fulfillmentType ", fulfillmentType)
+    if (fulfillmentType === "shipping") {
+      finalAmount = totalAmount + (tax || 0) + 50; // Adding delivery fee of 50 for shipping
+    } else {
+      finalAmount = totalAmount + (tax || 0); // Just tax for pickup
+    }
+    console.log("finalAmount ",finalAmount," totalAmount ",totalAmount," tax ",tax)
 
     // Verify that this payment method is enabled for the shop
     if (!availablePaymentMethods.includes(methodName)) {
@@ -108,7 +118,7 @@ async function
         amount,
         tax,
         totalAmount,
-        finalAmount,
+        finalAmount, // Use the calculated finalAmount
         billingAddress: paymentInput.billingAddress || billingAddress,
         currencyCode,
         email,
@@ -124,7 +134,22 @@ async function
       // This is from previous support for exchange rates, which was removed in v3.0.0
       currency: { exchangeRate: 1, userCurrency: currencyCode },
       currencyCode,
+      finalAmount, // Ensure finalAmount is set in the payment object
     };
+
+    // For EASYPAISA payments, ensure finalAmount is properly set (commented out as per user request)
+    // if (methodName === "easypaisa" && (!paymentWithCurrency.finalAmount || paymentWithCurrency.finalAmount <= 0)) {
+    //   if (paymentWithCurrency.totalAmount > 0) {
+    //     paymentWithCurrency.finalAmount = paymentWithCurrency.totalAmount;
+    //   } else if (paymentWithCurrency.amount > 0) {
+    //     paymentWithCurrency.finalAmount = paymentWithCurrency.amount;
+    //   } else {
+    //     throw new ReactionError(
+    //       "payment-invalid",
+    //       "Cannot determine payment amount for EasyPaisa payment"
+    //     );
+    //   }
+    // }
 
     PaymentSchema.validate(paymentWithCurrency);
 
@@ -133,7 +158,6 @@ async function
 
   let payments;
   try {
-
     payments = await Promise.all(paymentPromises);
     console.log("payments ", payments)
     payments = payments.filter((payment) => !!payment); // remove nulls
@@ -336,6 +360,7 @@ export default async function placeOrder(context, input) {
     shippingAddress: shippingAddressForPayments,
     shop,
     taxPercentage,
+    fulfillmentType: fulfillmentGroups[0]?.type
   });
   console.log("payments ", payments[0].finalAmount)
   console.log("totalAmount ", payments[0].totalAmount)
@@ -347,9 +372,13 @@ export default async function placeOrder(context, input) {
   }
   console.log("fulfillmentGroups?.[0]?.paymentMethod ", fulfillmentGroups?.[0]?.paymentMethod)
   let easyPaisaResponse;
-
+  console.log("orderId,null,payments[0].finalAmount,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
+  
   if (fulfillmentGroups[0].paymentMethod == "EASYPAISA") {
-    console.log("orderId,null,1,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
+    console.log("orderId,null,payments[0].finalAmount,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
+    
+    
+    
     easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
     console.log("easyPaisaResponse ", easyPaisaResponse)
     const transactionRecord = {
@@ -463,7 +492,7 @@ export default async function placeOrder(context, input) {
     let customFields = { ...(customFieldsFromClient || {}) };
     // We need to run each of these functions in a series, rather than in parallel, because
     // each function expects to get the result of the previous. It is recommended to disable `no-await-in-loop`
-    // eslint rules when the output of one iteration might be used as input in another iteration, such as this case here.
+    // rules when the output of one iteration might be used as input in another iteration, such as this case here.
     // See https://eslint.org/docs/rules/no-await-in-loop#when-not-to-use-it
     for (const transformCustomOrderFieldsFunc of transformCustomOrderFieldsFuncs) {
       customFields = await transformCustomOrderFieldsFunc({
