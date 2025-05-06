@@ -32,6 +32,7 @@ const inputSchema = new SimpleSchema({
 export default async function sendOrderEmail(context, input) {
   inputSchema.validate(input);
   const { action, dataForEmail, fromShop, language, to } = input;
+  console.log("action, dataForEmail, fromShop, language, to  ",action, dataForEmail, fromShop, language, to )
   console.log(
     "dataForEmail.order.workflow.status",
     dataForEmail.order.workflow.status

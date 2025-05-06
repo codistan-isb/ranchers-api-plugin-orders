@@ -301,7 +301,8 @@ export default async function ordersStartup(context) {
             "mwaseemkha@gmail.com",
             "nadirw70@gmail.com",
             "hamzakiani666k@gmail.com",
-            "ZoahibKahlid575@gmail.com"
+            "ZoahibKahlid575@gmail.com",
+            "m.irfan@zakorigroup.com"
           ].join(","),
           subject: "Daily Orders Report",
           text: "This is the daily orders report",
