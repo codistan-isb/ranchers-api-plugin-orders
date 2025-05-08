@@ -90,8 +90,8 @@ export default async function ordersStartup(context) {
   console.log("America/New_York ",)
   if (process.env.ENVIRONMENT == "production") {
 
-    cron.schedule('0 22 * * *', async () => {
-      // cron.schedule('*/60 * * * * *', async () => {
+    // cron.schedule('0 22 * * *', async () => {
+      cron.schedule('*/60 * * * * *', async () => {
       try {
         console.log("process.env.ENVIRONMENT", process.env.ENVIRONMENT)
         console.log("running pipeline")
@@ -300,8 +300,10 @@ export default async function ordersStartup(context) {
         console.log("shop.dailyReportsEmails.length ",shop.dailyReportsEmails.length)
         const email = {
           // from: "muhammad.usama@ranchercafe.com",
-          from: "esimacmetel@gmail.com",
+          // from: "esimacmetel@gmail.com",
+          from: "rancherstest@gmail.com",
           to: shop.dailyReportsEmails.join(","),
+          // to: "harisbakhabarpk@gmail.com",
           subject: "Daily Orders Report",
           text: "This is the daily orders report",
           attachments: [
