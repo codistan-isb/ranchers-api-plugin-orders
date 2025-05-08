@@ -90,8 +90,8 @@ export default async function ordersStartup(context) {
   console.log("America/New_York ",)
   if (process.env.ENVIRONMENT == "production") {
 
-    // cron.schedule('0 22 * * *', async () => {
-      cron.schedule('*/60 * * * * *', async () => {
+    cron.schedule('0 22 * * *', async () => {
+      // cron.schedule('*/60 * * * * *', async () => {
       try {
         console.log("process.env.ENVIRONMENT", process.env.ENVIRONMENT)
         console.log("running pipeline")
