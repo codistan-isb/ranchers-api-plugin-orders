@@ -21,6 +21,9 @@ const transporter = nodemailer.createTransport({
   }
 }
 );
+console.log("process.env.BREVOHOST ",process.env.BREVOHOST)
+console.log("process.env.BREVOUSER ",process.env.BREVOUSER)
+console.log("process.env.BREVOPASS ",process.env.BREVOPASS)
 
 /**
  * @summary Called on startup
@@ -31,7 +34,7 @@ const transporter = nodemailer.createTransport({
 export default async function ordersStartup(context) {
   const { app, appEvents } = context;
   let { collections, redis } = context;
-  const { Orders, Catalog } = collections;
+  const { Orders, Catalog, Shops } = collections;
   if (app.expressApp) {
 
     //add other middleware
@@ -56,7 +59,8 @@ export default async function ordersStartup(context) {
       }
     })
   }
-  const catalogs = await Catalog.find({}).toArray()
+  const catalogs = await Catalog.find({}).toArray();
+  const shop = await Shops.findOne({ shopType: "primary" });
   for (let i = 0; i < catalogs.length; i++) {
     console.log("catalogs[0] ", catalogs[0])
     console.log("redis.set(catalogs[0]?.product?._id, catalogs[0]?.product, , 604800) ,", redis.set(catalogs[i]?.product?._id, catalogs[i]?.product, "EX", 604800))
@@ -291,19 +295,13 @@ export default async function ordersStartup(context) {
         fs.writeFileSync(appFilePath, appOrdersCsv);
         const canceledFilePath = './canceledOrders.csv';
         fs.writeFileSync(canceledFilePath, canceledOrdersCsv);
+        console.log("shop ",shop)
+        console.log("shop.dailyReportsEmails ",shop.dailyReportsEmails)
+        console.log("shop.dailyReportsEmails.length ",shop.dailyReportsEmails.length)
         const email = {
-          from: "muhammad.usama@ranchercafe.com",
-          to: [
-            "haris.ghumman46@gmail.com",
-            "aliasadwarraich29@gmail.com",
-            "stasawfi787@gmail.com",
-            "harisbakhabarpk@gmail.com",
-            "mwaseemkha@gmail.com",
-            "nadirw70@gmail.com",
-            "hamzakiani666k@gmail.com",
-            "ZoahibKahlid575@gmail.com",
-            "m.irfan@zakorigroup.com"
-          ].join(","),
+          // from: "muhammad.usama@ranchercafe.com",
+          from: "esimacmetel@gmail.com",
+          to: shop.dailyReportsEmails.join(","),
           subject: "Daily Orders Report",
           text: "This is the daily orders report",
           attachments: [
@@ -326,6 +324,7 @@ export default async function ordersStartup(context) {
           ]
         };
         console.log("email ", email)
+        console.log("transporter ",transporter)
         const info = await transporter.sendMail(email);
         console.log('info:', info);
 
