@@ -59,33 +59,41 @@ async function
     shippingAddress,
     shop,
     taxPercentage,
-    fulfillmentType
+    fulfillmentType,
+    fulfillmentGroups
   }) {
   // console.log("paymentsInput create Payment ", paymentsInput)
 
   // Determining which payment methods are enabled for the shop
   const availablePaymentMethods = shop.availablePaymentMethods || [];
   console.log("orderTotal in createPayments ", orderTotal)
-  // Verify that total of payment inputs equals total due. We need to be sure
-  // to do this before creating any payment authorizations
-  verifyPaymentsMatchOrderTotal(paymentsInput || [], orderTotal, taxPercentage);
+
+  // Calculate total amount from items
+  const totalAmount = fulfillmentGroups.reduce((sum, group) => {
+    return sum + group.items.reduce((itemSum, item) => {
+      return itemSum + (item.price * item.quantity);
+    }, 0);
+  }, 0);
+
+  // Calculate tax based on totalAmount and taxPercentage
+  const tax = Math.round(totalAmount * (taxPercentage / 100));
+
+  // Calculate amount (totalAmount + tax)
+  const amount = totalAmount + tax;
 
   // Create authorized payments for each
   const paymentPromises = (paymentsInput || []).map(async (paymentInput) => {
     const {
-      amount,
-      method: methodName,
-      tax,
-      totalAmount,
+      method: methodName
     } = paymentInput;
 
     // Calculate finalAmount based on fulfillment type
     let finalAmount;
     console.log("fulfillmentType ", fulfillmentType)
     if (fulfillmentType === "shipping") {
-      finalAmount = totalAmount + (tax || 0) + 50; // Adding delivery fee of 50 for shipping
+      finalAmount = amount + 50; // Adding delivery fee of 50 for shipping
     } else {
-      finalAmount = totalAmount + (tax || 0); // Just tax for pickup
+      finalAmount = amount; // Just totalAmount + tax for pickup
     }
     console.log("finalAmount ",finalAmount," totalAmount ",totalAmount," tax ",tax)
 
@@ -114,19 +122,19 @@ async function
     const payment = await paymentMethodConfig.functions.createAuthorizedPayment(
       context,
       {
-        accountId, // optional
+        accountId,
         amount,
         tax,
         totalAmount,
-        finalAmount, // Use the calculated finalAmount
+        finalAmount,
         billingAddress: paymentInput.billingAddress || billingAddress,
         currencyCode,
         email,
-        shippingAddress, // optional, for fraud detection, the first shipping address if shipping to multiple
+        shippingAddress,
         shopId: shop._id,
         paymentData: {
           ...(paymentInput.data || {}),
-        }, // optional, object, blackbox
+        },
       }
     );
     const paymentWithCurrency = {
@@ -134,7 +142,7 @@ async function
       // This is from previous support for exchange rates, which was removed in v3.0.0
       currency: { exchangeRate: 1, userCurrency: currencyCode },
       currencyCode,
-      finalAmount, // Ensure finalAmount is set in the payment object
+      finalAmount,
     };
 
     // For EASYPAISA payments, ensure finalAmount is properly set (commented out as per user request)
@@ -255,6 +263,9 @@ export default async function placeOrder(context, input) {
   ) {
     taxPercentage = taxData?.Card;
   }
+  if(fulfillmentGroups?.[0]?.paymentMethod === "EASYPAISA"){
+    taxPercentage = taxData?.Card;
+  }
   console.log("taxPercentage ", taxPercentage)
 
   const shop = await context.queries.shopById(context, shopId);
@@ -360,7 +371,8 @@ export default async function placeOrder(context, input) {
     shippingAddress: shippingAddressForPayments,
     shop,
     taxPercentage,
-    fulfillmentType: fulfillmentGroups[0]?.type
+    fulfillmentType: fulfillmentGroups[0]?.type,
+    fulfillmentGroups
   });
   console.log("payments ", payments[0].finalAmount)
   console.log("totalAmount ", payments[0].totalAmount)
@@ -379,29 +391,29 @@ export default async function placeOrder(context, input) {
     
     
     
-    easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
-    console.log("easyPaisaResponse ", easyPaisaResponse)
-    const transactionRecord = {
-      orderId,
-      accountId,
-      email,
-      // transactionId: '32794508224',
-      // transactionDateTime: '17/12/2024 12:24 PM',
-      transactionId: easyPaisaResponse?.transactionId,
-      transactionDateTime: easyPaisaResponse?.transactionDateTime,
-      easyPaisaNumber: easyPaisaNumber
-    }
+    // easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
+    // console.log("easyPaisaResponse ", easyPaisaResponse)
+    // const transactionRecord = {
+    //   orderId,
+    //   accountId,
+    //   email,
+    //   // transactionId: '32794508224',
+    //   // transactionDateTime: '17/12/2024 12:24 PM',
+    //   transactionId: easyPaisaResponse?.transactionId,
+    //   transactionDateTime: easyPaisaResponse?.transactionDateTime,
+    //   easyPaisaNumber: easyPaisaNumber
+    // }
 
-    console.log("TRANSACTION REOCRD", transactionRecord)
-    const newTransaction = await Transaction.insertOne(transactionRecord)
-    console.log("newTransaction ", newTransaction)
+    // console.log("TRANSACTION REOCRD", transactionRecord)
+    // const newTransaction = await Transaction.insertOne(transactionRecord)
+    // console.log("newTransaction ", newTransaction)
   }
-  if (fulfillmentGroups[0].paymentMethod == "EASYPAISA" && easyPaisaResponse?.responseCode != "0000") {
-    throw new ReactionError(
-      "transaction-failed",
-      "Transaction has been failed"
-    );
-  }
+  // if (fulfillmentGroups[0].paymentMethod == "EASYPAISA" && easyPaisaResponse?.responseCode != "0000") {
+  //   throw new ReactionError(
+  //     "transaction-failed",
+  //     "Transaction has been failed"
+  //   );
+  // }
 
   console.log("fulfillmentGroups[0].paymentMethod", fulfillmentGroups[0].paymentMethod)
 
@@ -442,7 +454,7 @@ export default async function placeOrder(context, input) {
     Latitude,
     Longitude,
     paymentMethod: fulfillmentGroups[0].paymentMethod,
-    transactionId: fulfillmentGroups[0].paymentMethod == "EASYPAISA" ? easyPaisaResponse?.transactionId : ""
+    transactionId: fulfillmentGroups[0].paymentMethod == "EASYPAISA" ? "" : ""
   };
 
 

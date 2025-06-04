@@ -299,9 +299,9 @@ export default async function ordersStartup(context) {
         console.log("shop.dailyReportsEmails ",shop.dailyReportsEmails)
         console.log("shop.dailyReportsEmails.length ",shop.dailyReportsEmails.length)
         const email = {
-          // from: "muhammad.usama@ranchercafe.com",
+          from: "muhammad.usama@ranchercafe.com",
           // from: "esimacmetel@gmail.com",
-          from: "rancherstest@gmail.com",
+          // from: "rancherstest@gmail.com",
           to: shop.dailyReportsEmails.join(","),
           // to: "harisbakhabarpk@gmail.com",
           subject: "Daily Orders Report",
