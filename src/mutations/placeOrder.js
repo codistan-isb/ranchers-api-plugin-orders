@@ -617,7 +617,7 @@ export default async function placeOrder(context, input) {
     },
     {
       $addFields: {
-        isPaid: { $cond: [{ $eq: ["$paymentMethod", "EASYPAISA"] }, true, false] },
+        isPaid: { $cond: [{ $eq: ["$paymentMethod", "EASYPAISA"] }, false, false] }, // for easyPaisa payment method, we are not marking it as paid as user pays to rider on delviery
         isGuestUser: { $cond: [{ $eq: ["$accountId", null] }, true, false] },
       },
     },
