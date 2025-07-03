@@ -27,14 +27,21 @@ export default async function sendWhatsAppMessage(context, input) {
     𝐑𝐚𝐧𝐜𝐡𝐞𝐫𝐬 𝐂𝐚𝐟𝐞`;
   }
   if (OrderStatus === "confirmed" || OrderStatus === "processing") {
-    message = `Hello ${
+    message = `Hey  ${
       firstName + " " + lastName
     } , just a quick update on your order ${generatedID}. Our team is currently working on preparing your meal with care. We appreciate your patience and understanding. Stay tuned for further updates!`;
   }
   if (OrderStatus === "ready") {
-    message = `Hello ${
+    message = `Hey  ${
       firstName + " " + lastName
-    } , just a quick update on your order ${generatedID}. Your order is prepared and ready to dispatch. Our team has worked diligently to ensure your meal is prepared with care. We appreciate your patience and understanding. Stay tuned for further updates!`;
+    } , just a quick update on your order ${generatedID}. It’s hot, packed, and ready to roll out! 🍔🍟
+Our crew has prepared it with care, and it’s all set for dispatch. 
+
+This WhatsApp is automated and only used to update your order status.
+For any queries or issues, please contact us at 051-111-577-677 or WhatsApp ‪+92 333 4756978‬
+
+Your flavor ride is almost there! 🛵🔥
+`;
   }
   if (OrderStatus === "pickedUp") {
     message = `Hi  ${
