@@ -59,16 +59,261 @@ export default async function ordersStartup(context) {
       }
     })
   }
+
+  async function sendDailyReport (){
+
+    try {
+      console.log("process.env.ENVIRONMENT", process.env.ENVIRONMENT)
+      console.log("running pipeline for daily report")
+      // Get the current time and calculate the time 24 hours ago
+      const now = new Date();
+      console.log("now ", now)
+      const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      console.log("last24Hours ", last24Hours)
+      const aggregationPipeline = [
+        {
+          $match: {
+            createdAt: {
+              $gte: last24Hours,
+              $lte: now
+            },
+          }
+        },
+        {
+          $addFields: {
+            branchID: {
+              $toObjectId: "$branchID"
+            }
+          }
+        },
+        {
+          $lookup: {
+            from: "BranchData",
+            localField: "branchID",
+            foreignField: "_id",
+            as: "branchData"
+          }
+        },
+        {
+          $addFields: {
+            branchInfo: {
+              $arrayElemAt: ["$branchData", 0]
+            }
+          }
+        },
+        {
+          $addFields: {
+            branchName: "$branchInfo.name",
+            branchAddress: "$branchInfo.address"
+          }
+        },
+        {
+          $addFields: {
+            amount: {
+              $arrayElemAt: ["$payments.totalAmount", 0]
+            },
+            tax: {
+              $arrayElemAt: ["$payments.tax", 0]
+            },
+            finalAmount: {
+              $arrayElemAt: ["$payments.finalAmount", 0]
+            },
+            status: "$workflow.status",
+            contactNumber: {
+              $arrayElemAt: [
+                "$payments.address.phone",
+                0
+              ]
+            },
+            phonenumber: {
+              $arrayElemAt: [
+                "$shipping.address.phone",
+                0
+              ]
+            },
+            deliveryAddress: {
+              $arrayElemAt: [
+                "$shipping.address.address1",
+                0
+              ]
+            },
+            productName: {
+              $arrayElemAt: ["$shipping.items.title", 0]
+            },
+          }
+        },
+        {
+          $addFields: {
+            notes: {
+              $arrayElemAt: ["$notes.content", 0]
+            }
+          }
+        },
+        {
+          $addFields: {
+            currencyCode: {
+              $cond: {
+                if: {
+                  $eq: ["$currencyCode", "USD"]
+                },
+                then: "PKR",
+                else: "$currencyCode"
+              }
+            }
+          }
+        },
+        {
+          $sort: {
+            createdAt: -1
+          }
+        },
+        {
+          $addFields: {
+            orderTime: {
+              $add: ["$createdAt", 5 * 60 * 60000]
+            }
+          }
+        },
+        {
+          $project: {
+            orderTime: 1,
+            contactNumber: 1,
+            email: 1,
+            phonenumber: 1,
+            deliveryAddress: 1,
+            paymentMethod: 1,
+            placedFrom: 1,
+            branchName: 1,
+            branchAddress: 1,
+            tax: 1,
+            amount: 1,
+            finalAmount: 1,
+            currencyCode: 1,
+            rejectionReason: 1,
+            status: 1,
+            productName: -1,
+            items: "$shipping.items",
+            notes: 1
+          }
+        }
+      ]
+
+      const NewOrdersTemplate = await Orders.aggregate(aggregationPipeline).toArray();
+      // console.log("NewOrdersTemplate:", NewOrdersTemplate);
+      const dealNames = ["Tamasha Champions Deal", "Hunger Buster", "Happiness Squared Deal", "Any 2 Deal", "Two For You"];
+
+      const formattedOrders = NewOrdersTemplate.map(order => {
+        const items = order.items?.[0] || []; // Extracting items array from nested array
+
+        let formattedProductNames = [];
+        let formattedDealNames = [];
+
+        items.forEach(item => {
+          const formattedItem = `${item.title} x ${item.quantity}`;
+          const normalizedTitle = item.title.trim(); // Trim spaces
+
+          // console.log("Checking:", `"${normalizedTitle}"`, "against dealNames:", dealNames);
+          // console.log("Match:", dealNames.includes(normalizedTitle));
+
+          if (dealNames.includes(normalizedTitle)) {
+            formattedDealNames.push(formattedItem);
+          } else {
+            formattedProductNames.push(formattedItem);
+          }
+        });
+
+        return {
+          ...order,
+          productName: formattedProductNames.join(', '),
+          dealName: formattedDealNames.join(', ')
+        };
+      });
+
+
+      // console.log("Formatted Orders:", formattedOrders);
+      const fields = [
+        '_id', 'orderTime', 'contactNumber', 'phonenumber', 'email', 'deliveryAddress', 'paymentMethod', 'placedFrom', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount', 'productName', 'dealName','notes'
+      ];
+      const canceledOrderFields = [
+        '_id', 'orderTime', 'contactNumber', 'phonenumber', 'email', 'deliveryAddress', 'paymentMethod', 'placedFrom', 'rejectionReason', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount', 'productName', 'dealName','notes'
+      ];
+      const opts = { fields };
+      // Filter orders for web and app
+      const webOrders = formattedOrders.filter(order => order.placedFrom === 'web');
+      const appOrders = formattedOrders.filter(order => order.placedFrom === 'app');
+      const canceledOrders = formattedOrders.filter(order => order.status === 'canceled');
+
+      // Convert to CSV
+      const todayOrdersCsv = convertJsonToCsv(formattedOrders, fields);
+      const webOrdersCsv = convertJsonToCsv(webOrders, fields);
+      const appOrdersCsv = convertJsonToCsv(appOrders, fields);
+      const canceledOrdersCsv = convertJsonToCsv(canceledOrders, canceledOrderFields);
+
+      // Save CSV to files
+      fs.writeFileSync('./todayOrders.csv', todayOrdersCsv);
+      fs.writeFileSync('./webOrders.csv', webOrdersCsv);
+      fs.writeFileSync('./appOrders.csv', appOrdersCsv);
+      fs.writeFileSync('./canceledOrders.csv', canceledOrdersCsv);
+      //console.log("csv ", csv)
+      // console.log(csv);
+      // Save CSV to a file
+      const filePath = './todayOrders.csv';
+      fs.writeFileSync(filePath, todayOrdersCsv);
+      const webFilePath = './todayWebOrders.csv';
+      fs.writeFileSync(webFilePath, webOrdersCsv);
+      const appFilePath = './todayAppOrders.csv';
+      fs.writeFileSync(appFilePath, appOrdersCsv);
+      const canceledFilePath = './canceledOrders.csv';
+      fs.writeFileSync(canceledFilePath, canceledOrdersCsv);
+      // console.log("shop ",shop)
+      console.log("shop.dailyReportsEmails ",shop?.dailyReportsEmails)
+      console.log("shop.dailyReportsEmails.length ",shop?.dailyReportsEmails?.length)
+      const email = {
+        from: "muhammad.usama@ranchercafe.com",
+        // from: "esimacmetel@gmail.com",
+        // from: "rancherstest@gmail.com",
+        to: shop.dailyReportsEmails.join(","),
+        // to: "usama@codistan.org",
+        subject: "Daily Orders Report",
+        text: "This is the daily orders report",
+        attachments: [
+          {
+            filename: 'todayOrders.csv',
+            content: fs.createReadStream('./todayOrders.csv')
+          },
+          {
+            filename: 'todayWebOrders.csv',
+            content: fs.createReadStream('./todayWebOrders.csv')
+          },
+          {
+            filename: 'todayAppOrders.csv',
+            content: fs.createReadStream('./todayAppOrders.csv')
+          },
+          {
+            filename: 'canceledOrders.csv',
+            content: fs.createReadStream('./canceledOrders.csv')
+          }
+        ]
+      };
+      console.log("email ", email)
+      console.log("transporter ",transporter)
+      const info = await transporter.sendMail(email);
+      console.log('info:', info);
+
+    } catch (err) {
+      console.log("err ", err)
+    }
+  }
   const catalogs = await Catalog.find({}).toArray();
   const shop = await Shops.findOne({ shopType: "primary" });
   for (let i = 0; i < catalogs.length; i++) {
-    console.log("catalogs[0] ", catalogs[0])
-    console.log("redis.set(catalogs[0]?.product?._id, catalogs[0]?.product, , 604800) ,", redis.set(catalogs[i]?.product?._id, catalogs[i]?.product, "EX", 604800))
+    // console.log("catalogs[0] ", catalogs[0])
+    // console.log("redis.set(catalogs[0]?.product?._id, catalogs[0]?.product, , 604800) ,", redis.set(catalogs[i]?.product?._id, catalogs[i]?.product, "EX", 604800))
     await redis.set(catalogs[i]?.product?._id, JSON.stringify(catalogs[i]?.product), "EX", 604800);
   }
-  console.log(decodeOpaqueId("cmVhY3Rpb24vdGFnOlF4SmVmTUEzdmlHbnF1azZZ"))
-  console.log(decodeOpaqueId("cmVhY3Rpb24vdGFnOmFKOVQ2dFBIekU2aHNwZDA1OQ=="))
-  console.log("in api ", decodeOpaqueId("cmVhY3Rpb24vdGFnOmFKOVQ2dFBIekU2aHNwZDA2MA=="))
+  // console.log(decodeOpaqueId("cmVhY3Rpb24vdGFnOlF4SmVmTUEzdmlHbnF1azZZ"))
+  // console.log(decodeOpaqueId("cmVhY3Rpb24vdGFnOmFKOVQ2dFBIekU2aHNwZDA1OQ=="))
+  // console.log("in api ", decodeOpaqueId("cmVhY3Rpb24vdGFnOmFKOVQ2dFBIekU2aHNwZDA2MA=="))
   function convertJsonToCsv(items, fields) {
     const hdr = fields
 
@@ -88,254 +333,16 @@ export default async function ordersStartup(context) {
     return csvFile;
   }
   console.log("America/New_York ",)
-  if (process.env.ENVIRONMENT == "production") {
+  if (process.env.ENVIRONMENT == "production") 
+    {
 
     cron.schedule('0 22 * * *', async () => {
       // cron.schedule('*/60 * * * * *', async () => {
-      try {
-        console.log("process.env.ENVIRONMENT", process.env.ENVIRONMENT)
-        console.log("running pipeline")
-        // Get the current time and calculate the time 24 hours ago
-        const now = new Date();
-        console.log("now ", now)
-        const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-        console.log("last24Hours ", last24Hours)
-        const aggregationPipeline = [
-          {
-            $match: {
-              createdAt: {
-                $gte: last24Hours,
-                $lte: now
-              },
-            }
-          },
-          {
-            $addFields: {
-              branchID: {
-                $toObjectId: "$branchID"
-              }
-            }
-          },
-          {
-            $lookup: {
-              from: "BranchData",
-              localField: "branchID",
-              foreignField: "_id",
-              as: "branchData"
-            }
-          },
-          {
-            $addFields: {
-              branchInfo: {
-                $arrayElemAt: ["$branchData", 0]
-              }
-            }
-          },
-          {
-            $addFields: {
-              branchName: "$branchInfo.name",
-              branchAddress: "$branchInfo.address"
-            }
-          },
-          {
-            $addFields: {
-              amount: {
-                $arrayElemAt: ["$payments.totalAmount", 0]
-              },
-              tax: {
-                $arrayElemAt: ["$payments.tax", 0]
-              },
-              finalAmount: {
-                $arrayElemAt: ["$payments.finalAmount", 0]
-              },
-              status: "$workflow.status",
-              contactNumber: {
-                $arrayElemAt: [
-                  "$payments.address.phone",
-                  0
-                ]
-              },
-              phonenumber: {
-                $arrayElemAt: [
-                  "$shipping.address.phone",
-                  0
-                ]
-              },
-              deliveryAddress: {
-                $arrayElemAt: [
-                  "$shipping.address.address1",
-                  0
-                ]
-              },
-              productName: {
-                $arrayElemAt: ["$shipping.items.title", 0]
-              },
-            }
-          },
-          {
-            $addFields: {
-              notes: {
-                $arrayElemAt: ["$notes.content", 0]
-              }
-            }
-          },
-          {
-            $addFields: {
-              currencyCode: {
-                $cond: {
-                  if: {
-                    $eq: ["$currencyCode", "USD"]
-                  },
-                  then: "PKR",
-                  else: "$currencyCode"
-                }
-              }
-            }
-          },
-          {
-            $sort: {
-              createdAt: -1
-            }
-          },
-          {
-            $addFields: {
-              orderTime: {
-                $add: ["$createdAt", 5 * 60 * 60000]
-              }
-            }
-          },
-          {
-            $project: {
-              orderTime: 1,
-              contactNumber: 1,
-              email: 1,
-              phonenumber: 1,
-              deliveryAddress: 1,
-              paymentMethod: 1,
-              placedFrom: 1,
-              branchName: 1,
-              branchAddress: 1,
-              tax: 1,
-              amount: 1,
-              finalAmount: 1,
-              currencyCode: 1,
-              rejectionReason: 1,
-              status: 1,
-              productName: -1,
-              items: "$shipping.items",
-              notes: 1
-            }
-          }
-        ]
-
-        const NewOrdersTemplate = await Orders.aggregate(aggregationPipeline).toArray();
-        console.log("NewOrdersTemplate:", NewOrdersTemplate);
-        const dealNames = ["Tamasha Champions Deal", "Hunger Buster", "Happiness Squared Deal", "Any 2 Deal", "Two For You"];
-
-        const formattedOrders = NewOrdersTemplate.map(order => {
-          const items = order.items?.[0] || []; // Extracting items array from nested array
-
-          let formattedProductNames = [];
-          let formattedDealNames = [];
-
-          items.forEach(item => {
-            const formattedItem = `${item.title} x ${item.quantity}`;
-            const normalizedTitle = item.title.trim(); // Trim spaces
-
-            console.log("Checking:", `"${normalizedTitle}"`, "against dealNames:", dealNames);
-            console.log("Match:", dealNames.includes(normalizedTitle));
-
-            if (dealNames.includes(normalizedTitle)) {
-              formattedDealNames.push(formattedItem);
-            } else {
-              formattedProductNames.push(formattedItem);
-            }
-          });
-
-          return {
-            ...order,
-            productName: formattedProductNames.join(', '),
-            dealName: formattedDealNames.join(', ')
-          };
-        });
-
-
-        console.log("Formatted Orders:", formattedOrders);
-        const fields = [
-          '_id', 'orderTime', 'contactNumber', 'phonenumber', 'email', 'deliveryAddress', 'paymentMethod', 'placedFrom', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount', 'productName', 'dealName','notes'
-        ];
-        const canceledOrderFields = [
-          '_id', 'orderTime', 'contactNumber', 'phonenumber', 'email', 'deliveryAddress', 'paymentMethod', 'placedFrom', 'rejectionReason', 'branchName', 'branchAddress', 'amount', 'tax', 'finalAmount', 'productName', 'dealName','notes'
-        ];
-        const opts = { fields };
-        // Filter orders for web and app
-        const webOrders = formattedOrders.filter(order => order.placedFrom === 'web');
-        const appOrders = formattedOrders.filter(order => order.placedFrom === 'app');
-        const canceledOrders = formattedOrders.filter(order => order.status === 'canceled');
-
-        // Convert to CSV
-        const todayOrdersCsv = convertJsonToCsv(formattedOrders, fields);
-        const webOrdersCsv = convertJsonToCsv(webOrders, fields);
-        const appOrdersCsv = convertJsonToCsv(appOrders, fields);
-        const canceledOrdersCsv = convertJsonToCsv(canceledOrders, canceledOrderFields);
-
-        // Save CSV to files
-        fs.writeFileSync('./todayOrders.csv', todayOrdersCsv);
-        fs.writeFileSync('./webOrders.csv', webOrdersCsv);
-        fs.writeFileSync('./appOrders.csv', appOrdersCsv);
-        fs.writeFileSync('./canceledOrders.csv', canceledOrdersCsv);
-        //console.log("csv ", csv)
-        // console.log(csv);
-        // Save CSV to a file
-        const filePath = './todayOrders.csv';
-        fs.writeFileSync(filePath, todayOrdersCsv);
-        const webFilePath = './todayWebOrders.csv';
-        fs.writeFileSync(webFilePath, webOrdersCsv);
-        const appFilePath = './todayAppOrders.csv';
-        fs.writeFileSync(appFilePath, appOrdersCsv);
-        const canceledFilePath = './canceledOrders.csv';
-        fs.writeFileSync(canceledFilePath, canceledOrdersCsv);
-        console.log("shop ",shop)
-        console.log("shop.dailyReportsEmails ",shop.dailyReportsEmails)
-        console.log("shop.dailyReportsEmails.length ",shop.dailyReportsEmails.length)
-        const email = {
-          from: "muhammad.usama@ranchercafe.com",
-          // from: "esimacmetel@gmail.com",
-          // from: "rancherstest@gmail.com",
-          to: shop.dailyReportsEmails.join(","),
-          // to: "harisbakhabarpk@gmail.com",
-          subject: "Daily Orders Report",
-          text: "This is the daily orders report",
-          attachments: [
-            {
-              filename: 'todayOrders.csv',
-              content: fs.createReadStream('./todayOrders.csv')
-            },
-            {
-              filename: 'todayWebOrders.csv',
-              content: fs.createReadStream('./todayWebOrders.csv')
-            },
-            {
-              filename: 'todayAppOrders.csv',
-              content: fs.createReadStream('./todayAppOrders.csv')
-            },
-            {
-              filename: 'canceledOrders.csv',
-              content: fs.createReadStream('./canceledOrders.csv')
-            }
-          ]
-        };
-        console.log("email ", email)
-        console.log("transporter ",transporter)
-        const info = await transporter.sendMail(email);
-        console.log('info:', info);
-
-      } catch (err) {
-        console.log("err ", err)
-      }
+        sendDailyReport();
     });
   }
 
+  sendDailyReport();
 
 
   appEvents.on(
