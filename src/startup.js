@@ -342,7 +342,7 @@ export default async function ordersStartup(context) {
     });
   }
 
-  sendDailyReport();
+  // sendDailyReport();
 
 
   appEvents.on(
