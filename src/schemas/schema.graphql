@@ -43,10 +43,8 @@ extend type Query {
     sortBy: OrdersSortByField = createdAt
   ): OrderConnection!
 
-
   "Get all orders for a single account, optionally limited to certain shop IDs and certain orderStatus"
   getFavoriteOrders: [getFavoriteOrdersResponse]
-
 
   "Get all orders for a single account, optionally limited to certain shop IDs and certain orderStatus"
   ordersByAccountId(
@@ -202,8 +200,14 @@ extend type Mutation {
     input: UpdateOrderFulfillmentGroupInput!
   ): UpdateOrderFulfillmentGroupPayload!
 
-  favoriteOrder("Mutation input" input: favoriteOrderInput!): FavoriteOrderPayload!
-  removeFavoriteOrder("Mutation input" input: favoriteOrderInput!): removeFavoriteOrderPayload!
+  favoriteOrder(
+    "Mutation input"
+    input: favoriteOrderInput!
+  ): FavoriteOrderPayload!
+  removeFavoriteOrder(
+    "Mutation input"
+    input: favoriteOrderInput!
+  ): removeFavoriteOrderPayload!
   testNewOrderEvent: Boolean!
 }
 "Allowed values for the `OrderFulfillmentGroupItems` sortBy parameter"
@@ -821,6 +825,7 @@ enum paymentMethodValues {
   CASH
   CARD
   EASYPAISA
+  JAZZCASH
 }
 
 "Similar to `OrderFulfillmentGroupInput` but `items` can be omitted if moving existing items to the new group"
@@ -994,7 +999,9 @@ input PlaceOrderInput {
 
   guestToken: String
 
-  easyPaisaNumber: String
+  jazzCashNumber: String
+
+  CNIC: Int
 
   """
   The information necessary to pay. Collect this information from the shopper during a checkout flow.

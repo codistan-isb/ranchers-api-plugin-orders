@@ -547,7 +547,7 @@ export const orderFulfillmentGroupInputSchema = new SimpleSchema({
   },
   paymentMethod: {
     type: String,
-    allowedValues: ["COD", "CASH", "CARD","EASYPAISA"],
+    allowedValues: ["COD", "CASH", "CARD", "EASYPAISA", "JAZZCASH"],
   },
   deliveryTime: {
     type: Number,
@@ -617,7 +617,7 @@ export const orderInputSchema = new SimpleSchema({
     type: Number,
     optional: true,
   },
-  
+
 });
 
 export const paymentInputSchema = new SimpleSchema({
@@ -1277,8 +1277,8 @@ export const Payment = new SimpleSchema({
     type: String,
     optional: true,
   },
-  transactionId: {type:String, optional:true},
-  paymentMethod: {type:String, optional:true},
+  transactionId: { type: String, optional: true },
+  paymentMethod: { type: String, optional: true },
   Longitude: {
     type: Number,
     optional: true,
