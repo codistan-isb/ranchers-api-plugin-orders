@@ -26,14 +26,17 @@ export default async function placeOrder(parentResult, { input }, context) {
     order,
     payments,
     branchID,
-    notes,  
+    notes,
     Latitude,
     Longitude,
     placedFrom,
     isGuestUser = false,
     guestToken = null,
-    easyPaisaNumber
+    jazzCashNumber,
+    CNIC
   } = input;
+
+  console.log("INPUT INSIDE RESOLVER", input);
   const {
     cartId: opaqueCartId,
     fulfillmentGroups,
@@ -41,6 +44,8 @@ export default async function placeOrder(parentResult, { input }, context) {
   } = order;
   const cartId = opaqueCartId ? decodeCartOpaqueId(opaqueCartId) : null;
   const shopId = decodeShopOpaqueId(opaqueShopId);
+
+  console.log("PAYMENTS INSIDE RESOLVER", payments);
 
   const transformedFulfillmentGroups = fulfillmentGroups.map((group) => ({
     ...group,
@@ -68,10 +73,11 @@ export default async function placeOrder(parentResult, { input }, context) {
     Longitude,
     isGuestUser,
     guestToken,
-    easyPaisaNumber
-    
+    jazzCashNumber,
+    CNIC
   });
   console.log("Order Placed ", orders);
+  console.log("Order Placed ", orders[0].payments);
   // console.log("Order Placed payments ", orders[0].payments);
   return {
     clientMutationId,
