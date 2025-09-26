@@ -62,11 +62,11 @@ async function
     fulfillmentType,
     fulfillmentGroups
   }) {
-  // console.log("paymentsInput create Payment ", paymentsInput)
+  // //console.log("paymentsInput create Payment ", paymentsInput)
 
   // Determining which payment methods are enabled for the shop
   const availablePaymentMethods = shop.availablePaymentMethods || [];
-  console.log("orderTotal in createPayments ", orderTotal)
+  //console.log("orderTotal in createPayments ", orderTotal)
 
   // Calculate total amount from items
   const totalAmount = fulfillmentGroups.reduce((sum, group) => {
@@ -89,13 +89,20 @@ async function
 
     // Calculate finalAmount based on fulfillment type
     let finalAmount;
-    console.log("fulfillmentType ", fulfillmentType)
+    //console.log("fulfillmentType ", fulfillmentType)
     if (fulfillmentType === "shipping") {
-      finalAmount = amount + 50; // Adding delivery fee of 50 for shipping
+      console.log("shop?.deliveryCharges ", shop?.deliveryCharges)
+      if(shop?.deliveryCharges==null || shop?.deliveryCharges==undefined){
+         throw new ReactionError(
+      "payment-failed",
+      `Missing key deliveryCharges in shop Object`
+    );
+      }
+      finalAmount = amount + parseInt(shop?.deliveryCharges); // Adding delivery fee of 50 for shipping
     } else {
       finalAmount = amount; // Just totalAmount + tax for pickup
     }
-    console.log("finalAmount ",finalAmount," totalAmount ",totalAmount," tax ",tax)
+    //console.log("finalAmount ",finalAmount," totalAmount ",totalAmount," tax ",tax)
 
     // Verify that this payment method is enabled for the shop
     if (!availablePaymentMethods.includes(methodName)) {
@@ -167,7 +174,7 @@ async function
   let payments;
   try {
     payments = await Promise.all(paymentPromises);
-    console.log("payments ", payments)
+    //console.log("payments ", payments)
     payments = payments.filter((payment) => !!payment); // remove nulls
   } catch (error) {
     Logger.error("createOrder: error creating payments", error);
@@ -206,7 +213,7 @@ export default async function placeOrder(context, input) {
     guestToken,
     easyPaisaNumber
   } = input;
-  console.log("input ", input)
+  //console.log("input ", input)
   const {
     billingAddress,
     cartId,
@@ -220,7 +227,7 @@ export default async function placeOrder(context, input) {
 
   const { accountId, appEvents, collections, getFunctionsOfType, userId } =
     context;
-  // console.log("Collections available:", Object.keys(context.collections));
+  // //console.log("Collections available:", Object.keys(context.collections));
   const { TaxRate, Orders, Cart, BranchData, CartHistory, Transaction } = collections;
 
   //this is moved to the app event call
@@ -235,13 +242,13 @@ export default async function placeOrder(context, input) {
   let branchData = await BranchData.findOne({
     _id: ObjectID.ObjectId(branchID),
   });
-  console.log("branchData ", branchData)
+  //console.log("branchData ", branchData)
   if (branchData?.Timing) {
     const [startTime, endTime] = branchData.Timing.split(" - ").map((time) => time.trim());
     // Call the checkIfTime function
     const isOpen = await checkIfTime(startTime, endTime);
 
-    console.log("Is branch open?", isOpen, "branch.name ", branchData.name);
+    //console.log("Is branch open?", isOpen, "branch.name ", branchData.name);
     if (!isOpen) {
       throw new ReactionError("access-denied", `${branchData.name} Branch is closed for now. Please try between ${branchData.Timing}`);
     }
@@ -252,10 +259,10 @@ export default async function placeOrder(context, input) {
     deliveryCharges = branchData.deliveryCharges;
   }
 
-  // console.log("deliveryCharges", deliveryCharges);
+  // //console.log("deliveryCharges", deliveryCharges);
   prepTime = prepTime ? prepTime : 20;
   const taxData = await TaxRate.findOne({ _id: ObjectID.ObjectId(taxID) });
-  console.log("taxData ", taxData)
+  //console.log("taxData ", taxData)
   let taxPercentage = taxData?.Cash;
   if (
     fulfillmentGroups?.[0]?.type === "pickup" &&
@@ -266,7 +273,7 @@ export default async function placeOrder(context, input) {
   if(fulfillmentGroups?.[0]?.paymentMethod === "EASYPAISA"){
     taxPercentage = taxData?.Card;
   }
-  console.log("taxPercentage ", taxPercentage)
+  //console.log("taxPercentage ", taxPercentage)
 
   const shop = await context.queries.shopById(context, shopId);
   if (!shop) throw new ReactionError("not-found", "Shop not found");
@@ -289,9 +296,9 @@ export default async function placeOrder(context, input) {
 
   let cart;
   if (cartId) {
-    console.log("cartId ", cartId)
+    //console.log("cartId ", cartId)
     cart = await Cart.findOne({ _id: cartId });
-    console.log("cart ",cart)
+    //console.log("cart ",cart)
     // await
     if (!cart) {
       throw new ReactionError(
@@ -340,7 +347,7 @@ export default async function placeOrder(context, input) {
           Latitude,
           Longitude,
         });
-      console.log("group ", group)
+      //console.log("group ", group)
 
       // We save off the first shipping address found, for passing to payment services. They use this
       // for fraud detection.
@@ -353,12 +360,12 @@ export default async function placeOrder(context, input) {
 
       // Add the group total to the order total
       orderTotal += group.invoice.total;
-      // console.log("orderTotal", orderTotal);
-      // console.log("group", group);
+      // //console.log("orderTotal", orderTotal);
+      // //console.log("group", group);
       return group;
     })
   );
-  console.log("orderTotal", orderTotal)
+  //console.log("orderTotal", orderTotal)
 
   const payments = await createPayments({
     accountId,
@@ -374,39 +381,39 @@ export default async function placeOrder(context, input) {
     fulfillmentType: fulfillmentGroups[0]?.type,
     fulfillmentGroups
   });
-  console.log("payments ", payments[0].finalAmount)
-  console.log("totalAmount ", payments[0].totalAmount)
+  //console.log("payments ", payments[0].finalAmount)
+  //console.log("totalAmount ", payments[0].totalAmount)
   if (payments[0].totalAmount < 500) {
     throw new ReactionError(
       "invalid-order",
       "Order amount must be greater than 500"
     );
   }
-  console.log("fulfillmentGroups?.[0]?.paymentMethod ", fulfillmentGroups?.[0]?.paymentMethod)
+  //console.log("fulfillmentGroups?.[0]?.paymentMethod ", fulfillmentGroups?.[0]?.paymentMethod)
   let easyPaisaResponse;
-  console.log("orderId,null,payments[0].finalAmount,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
+  //console.log("orderId,null,payments[0].finalAmount,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
   
   if (fulfillmentGroups[0].paymentMethod == "EASYPAISA") {
-    console.log("orderId,null,payments[0].finalAmount,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
+    //console.log("orderId,null,payments[0].finalAmount,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
     
     
     
     // easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
-    // console.log("easyPaisaResponse ", easyPaisaResponse)
+    // //console.log("easyPaisaResponse ", easyPaisaResponse)
     // const transactionRecord = {
     //   orderId,
     //   accountId,
     //   email,
-    //   // transactionId: '32794508224',
+    //   // transactionId: '3279DELIVERYCHARGES508224',
     //   // transactionDateTime: '17/12/2024 12:24 PM',
     //   transactionId: easyPaisaResponse?.transactionId,
     //   transactionDateTime: easyPaisaResponse?.transactionDateTime,
     //   easyPaisaNumber: easyPaisaNumber
     // }
 
-    // console.log("TRANSACTION REOCRD", transactionRecord)
+    // //console.log("TRANSACTION REOCRD", transactionRecord)
     // const newTransaction = await Transaction.insertOne(transactionRecord)
-    // console.log("newTransaction ", newTransaction)
+    // //console.log("newTransaction ", newTransaction)
   }
   // if (fulfillmentGroups[0].paymentMethod == "EASYPAISA" && easyPaisaResponse?.responseCode != "0000") {
   //   throw new ReactionError(
@@ -415,7 +422,7 @@ export default async function placeOrder(context, input) {
   //   );
   // }
 
-  console.log("fulfillmentGroups[0].paymentMethod", fulfillmentGroups[0].paymentMethod)
+  //console.log("fulfillmentGroups[0].paymentMethod", fulfillmentGroups[0].paymentMethod)
 
   // Create anonymousAccessToken if no account ID
   const fullToken = accountId ? null : getAnonymousAccessToken();
@@ -458,7 +465,7 @@ export default async function placeOrder(context, input) {
   };
 
 
-  console.log("ORDER RECORD", order)
+  //console.log("ORDER RECORD", order)
 
   if (fullToken) {
     const dbToken = { ...fullToken };
@@ -492,7 +499,7 @@ export default async function placeOrder(context, input) {
       );
     }
   }
-  console.log("referenceId ", referenceId)
+  //console.log("referenceId ", referenceId)
 
   order.referenceId = referenceId;
 
@@ -524,8 +531,8 @@ export default async function placeOrder(context, input) {
     ...order,
     paymentMethod: fulfillmentGroups?.[0]?.paymentMethod || "CASH",
   });
-  console.log("newOrder ",newOrder)
-  console.log("newOrder.ops[0] ",newOrder.ops[0])
+  //console.log("newOrder ",newOrder)
+  //console.log("newOrder.ops[0] ",newOrder.ops[0])
   //Getting data for real time event
   const ordersResp = await Orders.aggregate([
     { $match: {
@@ -748,11 +755,11 @@ export default async function placeOrder(context, input) {
       },
     }
   ]).toArray();
-  console.log("ordersResp[0] ",ordersResp[0])
+  //console.log("ordersResp[0] ",ordersResp[0])
   pubSub.publish("ORDER_CREATED", {
     newOrder: ordersResp[0]
   });
-  // console.log("newEvent ",newEvent)
+  // //console.log("newEvent ",newEvent)
   // sendOrderEmail(context, order, "new");
   // const message = "Your order has been placed";
   // const appType = "customer";
@@ -777,7 +784,8 @@ export default async function placeOrder(context, input) {
   //     userId: userId,
   //   });
   // CartHistory.insertOne(cart);
-  console.log("generatedID", generatedID);
+  
+  //console.log("generatedID", generatedID);
   await appEvents.emit("afterOrderCreate", {
     createdBy: userId,
     order,
