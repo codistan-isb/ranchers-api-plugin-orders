@@ -19,7 +19,6 @@ import {
 import generateKitchenOrderID from "../util/generateKitchenOrderID.js";
 import checkIfTime from "../util/checkIfTime.js";
 import pubSub from "../util/pubSubIntance.js";
-// import jazzCashPayment from "../util/jazzCashPayment.js";
 // import { PubSub } from "graphql-subscriptions";
 // const pubSub = new PubSub();
 
@@ -82,22 +81,16 @@ async function
   // Calculate amount (totalAmount + tax)
   const amount = totalAmount + tax;
 
-  console.log("PAYMENT INPUT", paymentsInput);
-
+  // Create authorized payments for each
   const paymentPromises = (paymentsInput || []).map(async (paymentInput) => {
     const {
-      method: methodName,
-      amount,
-      tax,
-      totalAmount,
-
+      method: methodName
     } = paymentInput;
 
     // Calculate finalAmount based on fulfillment type
     let finalAmount;
     //console.log("fulfillmentType ", fulfillmentType)
     if (fulfillmentType === "shipping") {
-      console.log("shop?.deliveryCharges ", shop?.deliveryCharges)
       if(shop?.deliveryCharges==null || shop?.deliveryCharges==undefined){
          throw new ReactionError(
       "payment-failed",
@@ -106,10 +99,11 @@ async function
       }
       finalAmount = amount + parseInt(shop?.deliveryCharges); // Adding delivery fee of 50 for shipping
     } else {
-      finalAmount = Number(totalAmount) + Number(tax);
+      finalAmount = amount; // Just totalAmount + tax for pickup
     }
     //console.log("finalAmount ",finalAmount," totalAmount ",totalAmount," tax ",tax)
 
+    // Verify that this payment method is enabled for the shop
     if (!availablePaymentMethods.includes(methodName)) {
       throw new ReactionError(
         "payment-failed",
@@ -117,22 +111,28 @@ async function
       );
     }
 
+    // Grab config for this payment method
     let paymentMethodConfig;
     try {
-      paymentMethodConfig = context.queries.getPaymentMethodConfigByName(methodName);
+      paymentMethodConfig =
+        context.queries.getPaymentMethodConfigByName(methodName);
     } catch (error) {
       Logger.error(error);
-      throw new ReactionError("payment-failed", `Invalid payment method name: ${methodName}`);
+      throw new ReactionError(
+        "payment-failed",
+        `Invalid payment method name: ${methodName}`
+      );
     }
 
+    // Authorize this payment
     const payment = await paymentMethodConfig.functions.createAuthorizedPayment(
       context,
       {
         accountId,
-        amount: Number(amount),
-        tax: Number(tax),
-        totalAmount: Number(totalAmount),
-        finalAmount: Number(finalAmount),
+        amount,
+        tax,
+        totalAmount,
+        finalAmount,
         billingAddress: paymentInput.billingAddress || billingAddress,
         currencyCode,
         email,
@@ -143,104 +143,32 @@ async function
         },
       }
     );
-
     const paymentWithCurrency = {
       ...payment,
+      // This is from previous support for exchange rates, which was removed in v3.0.0
       currency: { exchangeRate: 1, userCurrency: currencyCode },
       currencyCode,
-      finalAmount: Number(finalAmount),
+      finalAmount,
     };
+
+    // For EASYPAISA payments, ensure finalAmount is properly set (commented out as per user request)
+    // if (methodName === "easypaisa" && (!paymentWithCurrency.finalAmount || paymentWithCurrency.finalAmount <= 0)) {
+    //   if (paymentWithCurrency.totalAmount > 0) {
+    //     paymentWithCurrency.finalAmount = paymentWithCurrency.totalAmount;
+    //   } else if (paymentWithCurrency.amount > 0) {
+    //     paymentWithCurrency.finalAmount = paymentWithCurrency.amount;
+    //   } else {
+    //     throw new ReactionError(
+    //       "payment-invalid",
+    //       "Cannot determine payment amount for EasyPaisa payment"
+    //     );
+    //   }
+    // }
 
     PaymentSchema.validate(paymentWithCurrency);
 
     return paymentWithCurrency;
   });
-
-
-  // Create authorized payments for each
-  // const paymentPromises = (paymentsInput || []).map(async (paymentInput) => {
-  //   const {
-  //     method: methodName
-  //   } = paymentInput;
-
-  //   console.log("Methond Name", method);
-  //   console.log("Payment INput", paymentInput);
-  //   // Calculate finalAmount based on fulfillment type
-  //   let finalAmount;
-  //   console.log("fulfillmentType ", fulfillmentType);
-  //   if (fulfillmentType === "shipping") {
-  //     finalAmount = amount + 50; // Adding delivery fee of 50 for shipping
-  //   } else {
-  //     finalAmount = amount; // Just totalAmount + tax for pickup
-  //   }
-  //   console.log("finalAmount ", finalAmount, " totalAmount ", totalAmount, " tax ", tax);
-
-  //   // Verify that this payment method is enabled for the shop
-  //   if (!availablePaymentMethods.includes(methodName)) {
-  //     throw new ReactionError(
-  //       "payment-failed",
-  //       `Payment method not enabled for this shop: ${methodName}`
-  //     );
-  //   }
-
-  //   // Grab config for this payment method
-  //   let paymentMethodConfig;
-  //   try {
-  //     paymentMethodConfig =
-  //       context.queries.getPaymentMethodConfigByName(methodName);
-  //   } catch (error) {
-  //     Logger.error(error);
-  //     throw new ReactionError(
-  //       "payment-failed",
-  //       `Invalid payment method name: ${methodName}`
-  //     );
-  //   }
-
-  //   // Authorize this payment
-  //   const payment = await paymentMethodConfig.functions.createAuthorizedPayment(
-  //     context,
-  //     {
-  //       accountId,
-  //       amount,
-  //       tax,
-  //       totalAmount,
-  //       finalAmount,
-  //       billingAddress: paymentInput.billingAddress || billingAddress,
-  //       currencyCode,
-  //       email,
-  //       shippingAddress,
-  //       shopId: shop._id,
-  //       paymentData: {
-  //         ...(paymentInput.data || {}),
-  //       },
-  //     }
-  //   );
-  //   const paymentWithCurrency = {
-  //     ...payment,
-  //     // This is from previous support for exchange rates, which was removed in v3.0.0
-  //     currency: { exchangeRate: 1, userCurrency: currencyCode },
-  //     currencyCode,
-  //     finalAmount,
-  //   };
-
-  //   // For EASYPAISA payments, ensure finalAmount is properly set (commented out as per user request)
-  //   // if (methodName === "easypaisa" && (!paymentWithCurrency.finalAmount || paymentWithCurrency.finalAmount <= 0)) {
-  //   //   if (paymentWithCurrency.totalAmount > 0) {
-  //   //     paymentWithCurrency.finalAmount = paymentWithCurrency.totalAmount;
-  //   //   } else if (paymentWithCurrency.amount > 0) {
-  //   //     paymentWithCurrency.finalAmount = paymentWithCurrency.amount;
-  //   //   } else {
-  //   //     throw new ReactionError(
-  //   //       "payment-invalid",
-  //   //       "Cannot determine payment amount for EasyPaisa payment"
-  //   //     );
-  //   //   }
-  //   // }
-
-  //   PaymentSchema.validate(paymentWithCurrency);
-
-  //   return paymentWithCurrency;
-  // });
 
   let payments;
   try {
@@ -282,8 +210,7 @@ export default async function placeOrder(context, input) {
     placedFrom,
     isGuestUser,
     guestToken,
-    jazzCashNumber,
-    CNIC
+    easyPaisaNumber
   } = input;
   //console.log("input ", input)
   const {
@@ -342,7 +269,7 @@ export default async function placeOrder(context, input) {
   ) {
     taxPercentage = taxData?.Card;
   }
-  if (fulfillmentGroups?.[0]?.paymentMethod === "EASYPAISA") {
+  if(fulfillmentGroups?.[0]?.paymentMethod === "EASYPAISA"){
     taxPercentage = taxData?.Card;
   }
   //console.log("taxPercentage ", taxPercentage)
@@ -465,28 +392,28 @@ export default async function placeOrder(context, input) {
   let easyPaisaResponse;
   //console.log("orderId,null,payments[0].finalAmount,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
   
-  // if (fulfillmentGroups[0].paymentMethod == "EASYPAISA") {
-  //   //console.log("orderId,null,payments[0].finalAmount,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
+  if (fulfillmentGroups[0].paymentMethod == "EASYPAISA") {
+    //console.log("orderId,null,payments[0].finalAmount,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
     
     
     
-  //   // easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
-  //   // //console.log("easyPaisaResponse ", easyPaisaResponse)
-  //   // const transactionRecord = {
-  //   //   orderId,
-  //   //   accountId,
-  //   //   email,
-  //   //   // transactionId: '3279DELIVERYCHARGES508224',
-  //   //   // transactionDateTime: '17/12/2024 12:24 PM',
-  //   //   transactionId: easyPaisaResponse?.transactionId,
-  //   //   transactionDateTime: easyPaisaResponse?.transactionDateTime,
-  //   //   jazzCashNumber: jazzCashNumber
-  //   // }
+    // easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
+    // //console.log("easyPaisaResponse ", easyPaisaResponse)
+    // const transactionRecord = {
+    //   orderId,
+    //   accountId,
+    //   email,
+    //   // transactionId: '3279DELIVERYCHARGES508224',
+    //   // transactionDateTime: '17/12/2024 12:24 PM',
+    //   transactionId: easyPaisaResponse?.transactionId,
+    //   transactionDateTime: easyPaisaResponse?.transactionDateTime,
+    //   easyPaisaNumber: easyPaisaNumber
+    // }
 
-  //   // //console.log("TRANSACTION REOCRD", transactionRecord)
-  //   // const newTransaction = await Transaction.insertOne(transactionRecord)
-  //   // //console.log("newTransaction ", newTransaction)
-  // }
+    // //console.log("TRANSACTION REOCRD", transactionRecord)
+    // const newTransaction = await Transaction.insertOne(transactionRecord)
+    // //console.log("newTransaction ", newTransaction)
+  }
   // if (fulfillmentGroups[0].paymentMethod == "EASYPAISA" && easyPaisaResponse?.responseCode != "0000") {
   //   throw new ReactionError(
   //     "transaction-failed",
@@ -496,17 +423,6 @@ export default async function placeOrder(context, input) {
 
   //console.log("fulfillmentGroups[0].paymentMethod", fulfillmentGroups[0].paymentMethod)
 
-    // console.log("TRANSACTION REOCRD", transactionRecord);
-    // const newTransaction = await Transaction.insertOne(transactionRecord);
-  
-  // if (fulfillmentGroups[0].paymentMethod == "JAZZCASH" && jazzCashRes?.pp_ResponseCode != "000") {
-  //   throw new ReactionError(
-  //     "transaction-failed",
-  //     "Transaction has been failed"
-  //   );
-  // }
-
-  // console.log("fulfillmentGroups[0].paymentMethod", fulfillmentGroups[0].paymentMethod);
   // Create anonymousAccessToken if no account ID
   const fullToken = accountId ? null : getAnonymousAccessToken();
 
@@ -610,7 +526,7 @@ export default async function placeOrder(context, input) {
   // Validate and save
 
   OrderSchema.validate(order);
-  const newOrder = await Orders.insertOne({
+  const newOrder=await Orders.insertOne({
     ...order,
     paymentMethod: fulfillmentGroups?.[0]?.paymentMethod || "CASH",
   });
@@ -618,11 +534,9 @@ export default async function placeOrder(context, input) {
   //console.log("newOrder.ops[0] ",newOrder.ops[0])
   //Getting data for real time event
   const ordersResp = await Orders.aggregate([
-    {
-      $match: {
-        _id: newOrder.ops[0]?._id
-      }
-    },
+    { $match: {
+      _id:newOrder.ops[0]?._id
+    } },
     { $sort: { createdAt: -1 } },
     {
       $lookup: {
@@ -844,7 +758,33 @@ export default async function placeOrder(context, input) {
   pubSub.publish("ORDER_CREATED", {
     newOrder: ordersResp[0]
   });
-
+  // //console.log("newEvent ",newEvent)
+  // sendOrderEmail(context, order, "new");
+  // const message = "Your order has been placed";
+  // const appType = "customer";
+  // const id = userId;
+  // const orderID = orderId;
+  // const paymentIntentClientSecret =
+  //   context.mutations.oneSignalCreateNotification(context, {
+  //     message,
+  //     id,
+  //     appType,
+  //     userId,
+  //     orderID,
+  //   });
+  // const message1 = "New Order is placed";
+  // const appType1 = "admin";
+  // const id1 = userId;
+  // const paymentIntentClientSecret1 =
+  //   context.mutations.oneSignalCreateNotification(context, {
+  //     message: message1,
+  //     id: id1,
+  //     appType: appType1,
+  //     userId: userId,
+  //   });
+  // CartHistory.insertOne(cart);
+  
+  //console.log("generatedID", generatedID);
   await appEvents.emit("afterOrderCreate", {
     createdBy: userId,
     order,
