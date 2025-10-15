@@ -1,7 +1,7 @@
 {
   "name": "@codistan-isb/ranchers-api-plugin-orders",
   "description": "Orders plugin for the Reaction API",
-  "version": "7.4.8",
+  "version": "7.4.9",
   "main": "index.js",
   "type": "module",
   "engines": {

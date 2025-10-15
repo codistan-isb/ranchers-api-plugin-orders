@@ -60,13 +60,12 @@ async function
     shop,
     taxPercentage,
     fulfillmentType,
-    fulfillmentGroups
+    fulfillmentGroups,
+    discountTotal
   }) {
-  // //console.log("paymentsInput create Payment ", paymentsInput)
 
   // Determining which payment methods are enabled for the shop
   const availablePaymentMethods = shop.availablePaymentMethods || [];
-  //console.log("orderTotal in createPayments ", orderTotal)
 
   // Calculate total amount from items
   const totalAmount = fulfillmentGroups.reduce((sum, group) => {
@@ -89,7 +88,6 @@ async function
 
     // Calculate finalAmount based on fulfillment type
     let finalAmount;
-    //console.log("fulfillmentType ", fulfillmentType)
     if (fulfillmentType === "shipping") {
       if(shop?.deliveryCharges==null || shop?.deliveryCharges==undefined){
          throw new ReactionError(
@@ -101,7 +99,6 @@ async function
     } else {
       finalAmount = amount; // Just totalAmount + tax for pickup
     }
-    //console.log("finalAmount ",finalAmount," totalAmount ",totalAmount," tax ",tax)
 
     // Verify that this payment method is enabled for the shop
     if (!availablePaymentMethods.includes(methodName)) {
@@ -152,18 +149,18 @@ async function
     };
 
     // For EASYPAISA payments, ensure finalAmount is properly set (commented out as per user request)
-    if (methodName === "easypaisa" && (!paymentWithCurrency.finalAmount || paymentWithCurrency.finalAmount <= 0)) {
-      if (paymentWithCurrency.totalAmount > 0) {
-        paymentWithCurrency.finalAmount = paymentWithCurrency.totalAmount;
-      } else if (paymentWithCurrency.amount > 0) {
-        paymentWithCurrency.finalAmount = paymentWithCurrency.amount;
-      } else {
-        throw new ReactionError(
-          "payment-invalid",
-          "Cannot determine payment amount for EasyPaisa payment"
-        );
-      }
-    }
+    // if (methodName === "easypaisa" && (!paymentWithCurrency.finalAmount || paymentWithCurrency.finalAmount <= 0)) {
+    //   if (paymentWithCurrency.totalAmount > 0) {
+    //     paymentWithCurrency.finalAmount = paymentWithCurrency.totalAmount;
+    //   } else if (paymentWithCurrency.amount > 0) {
+    //     paymentWithCurrency.finalAmount = paymentWithCurrency.amount;
+    //   } else {
+    //     throw new ReactionError(
+    //       "payment-invalid",
+    //       "Cannot determine payment amount for EasyPaisa payment"
+    //     );
+    //   }
+    // }
 
     PaymentSchema.validate(paymentWithCurrency);
 
@@ -173,7 +170,6 @@ async function
   let payments;
   try {
     payments = await Promise.all(paymentPromises);
-    //console.log("payments ", payments)
     payments = payments.filter((payment) => !!payment); // remove nulls
   } catch (error) {
     Logger.error("createOrder: error creating payments", error);
@@ -212,7 +208,6 @@ export default async function placeOrder(context, input) {
     guestToken,
     jazzCashNumber
   } = input;
-  //console.log("input ", input)
   const {
     billingAddress,
     cartId,
@@ -226,7 +221,6 @@ export default async function placeOrder(context, input) {
 
   const { accountId, appEvents, collections, getFunctionsOfType, userId } =
     context;
-  // //console.log("Collections available:", Object.keys(context.collections));
   const { TaxRate, Orders, Cart, BranchData, CartHistory, Transaction } = collections;
 
   //this is moved to the app event call
@@ -241,16 +235,14 @@ export default async function placeOrder(context, input) {
   let branchData = await BranchData.findOne({
     _id: ObjectID.ObjectId(branchID),
   });
-  //console.log("branchData ", branchData)
   if (branchData?.Timing) {
     const [startTime, endTime] = branchData.Timing.split(" - ").map((time) => time.trim());
     // Call the checkIfTime function
     const isOpen = await checkIfTime(startTime, endTime);
 
-    //console.log("Is branch open?", isOpen, "branch.name ", branchData.name);
-    // if (!isOpen) {
-    //   throw new ReactionError("access-denied", `${branchData.name} Branch is closed for now. Please try between ${branchData.Timing}`);
-    // }
+    if (!isOpen) {
+      throw new ReactionError("access-denied", `${branchData.name} Branch is closed for now. Please try between ${branchData.Timing}`);
+    }
   }
   if (branchData) {
     prepTime = branchData.prepTime;
@@ -258,10 +250,8 @@ export default async function placeOrder(context, input) {
     deliveryCharges = branchData.deliveryCharges;
   }
 
-  // //console.log("deliveryCharges", deliveryCharges);
   prepTime = prepTime ? prepTime : 20;
   const taxData = await TaxRate.findOne({ _id: ObjectID.ObjectId(taxID) });
-  //console.log("taxData ", taxData)
   let taxPercentage = taxData?.Cash;
   if (
     fulfillmentGroups?.[0]?.type === "pickup" &&
@@ -272,7 +262,6 @@ export default async function placeOrder(context, input) {
   if(fulfillmentGroups?.[0]?.paymentMethod === "EASYPAISA"){
     taxPercentage = taxData?.Card;
   }
-  //console.log("taxPercentage ", taxPercentage)
 
   const shop = await context.queries.shopById(context, shopId);
   if (!shop) throw new ReactionError("not-found", "Shop not found");
@@ -364,7 +353,6 @@ export default async function placeOrder(context, input) {
       return group;
     })
   );
-  //console.log("orderTotal", orderTotal)
 
   const payments = await createPayments({
     accountId,
@@ -378,26 +366,22 @@ export default async function placeOrder(context, input) {
     shop,
     taxPercentage,
     fulfillmentType: fulfillmentGroups[0]?.type,
-    fulfillmentGroups
+    fulfillmentGroups,
+    discountTotal
   });
-  //console.log("payments ", payments[0].finalAmount)
-  //console.log("totalAmount ", payments[0].totalAmount)
   if (payments[0].totalAmount < 500) {
     throw new ReactionError(
       "invalid-order",
       "Order amount must be greater than 500"
     );
   }
-  //console.log("fulfillmentGroups?.[0]?.paymentMethod ", fulfillmentGroups?.[0]?.paymentMethod)
   let easyPaisaResponse;
-  //console.log("orderId,null,payments[0].finalAmount,null,jazzCashNumber, email ", orderId, null, payments[0].finalAmount, null, jazzCashNumber, email)
-  
+  let  transactionRecord;
   if (fulfillmentGroups[0].paymentMethod == "EASYPAISA") {
-    console.log("orderId,null,payments[0].finalAmount,null,jazzCashNumber, email ", orderId, null, payments[0].finalAmount, null, jazzCashNumber, email)
     
     
     
-    easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount, null, jazzCashNumber, email)
+    easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount-discountTotal, null, jazzCashNumber, email)
     console.log("easyPaisaResponse ", easyPaisaResponse)
     const transactionRecord = {
       orderId,
@@ -405,23 +389,28 @@ export default async function placeOrder(context, input) {
       email,
       // transactionId: '3279DELIVERYCHARGES508224',
       // transactionDateTime: '17/12/2024 12:24 PM',
+      responseCode: easyPaisaResponse?.responseCode,
+      responseMessage: easyPaisaResponse?.responseMessage,
+      amount: payments[0].finalAmount-discountTotal,
+      status: easyPaisaResponse?.responseCode == "0000" ? "SUCCESS" : "FAILED",
+      createdAt: new Date(),
+      updatedAt: new Date(),
       transactionId: easyPaisaResponse?.transactionId,
       transactionDateTime: easyPaisaResponse?.transactionDateTime,
       jazzCashNumber: jazzCashNumber
     }
 
     console.log("TRANSACTION REOCRD", transactionRecord)
-    const newTransaction = await Transaction.insertOne(transactionRecord)
-    console.log("newTransaction ", newTransaction)
+    transactionRecord=await Transaction.insertOne(transactionRecord)
   }
   if (fulfillmentGroups[0].paymentMethod == "EASYPAISA" && easyPaisaResponse?.responseCode != "0000") {
+    console.log("Transaction Failed",easyPaisaResponse?.responseCode)
     throw new ReactionError(
       "transaction-failed",
       "Transaction has been failed"
     );
   }
 
-  console.log("fulfillmentGroups[0].paymentMethod", fulfillmentGroups[0].paymentMethod)
 
   // Create anonymousAccessToken if no account ID
   const fullToken = accountId ? null : getAnonymousAccessToken();
@@ -460,7 +449,7 @@ export default async function placeOrder(context, input) {
     Latitude,
     Longitude,
     paymentMethod: fulfillmentGroups[0].paymentMethod,
-    transactionId: fulfillmentGroups[0].paymentMethod == "EASYPAISA" ? "" : ""
+    transactionId: transactionRecord?._id?transactionRecord?._id.toString():null,
   };
 
 
@@ -530,8 +519,6 @@ export default async function placeOrder(context, input) {
     ...order,
     paymentMethod: fulfillmentGroups?.[0]?.paymentMethod || "CASH",
   });
-  //console.log("newOrder ",newOrder)
-  //console.log("newOrder.ops[0] ",newOrder.ops[0])
   //Getting data for real time event
   const ordersResp = await Orders.aggregate([
     { $match: {
@@ -754,7 +741,6 @@ export default async function placeOrder(context, input) {
       },
     }
   ]).toArray();
-  //console.log("ordersResp[0] ",ordersResp[0])
   pubSub.publish("ORDER_CREATED", {
     newOrder: ordersResp[0]
   });
