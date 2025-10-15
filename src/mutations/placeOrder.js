@@ -449,7 +449,7 @@ export default async function placeOrder(context, input) {
     Latitude,
     Longitude,
     paymentMethod: fulfillmentGroups[0].paymentMethod,
-    transactionId: transactionRecord?._id?transactionRecord?._id.toString():null,
+    transactionId: transactionRecord?.transactionId?transactionRecord?.transactionId.toString():null,
   };
 
 
