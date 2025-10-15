@@ -152,18 +152,18 @@ async function
     };
 
     // For EASYPAISA payments, ensure finalAmount is properly set (commented out as per user request)
-    // if (methodName === "easypaisa" && (!paymentWithCurrency.finalAmount || paymentWithCurrency.finalAmount <= 0)) {
-    //   if (paymentWithCurrency.totalAmount > 0) {
-    //     paymentWithCurrency.finalAmount = paymentWithCurrency.totalAmount;
-    //   } else if (paymentWithCurrency.amount > 0) {
-    //     paymentWithCurrency.finalAmount = paymentWithCurrency.amount;
-    //   } else {
-    //     throw new ReactionError(
-    //       "payment-invalid",
-    //       "Cannot determine payment amount for EasyPaisa payment"
-    //     );
-    //   }
-    // }
+    if (methodName === "easypaisa" && (!paymentWithCurrency.finalAmount || paymentWithCurrency.finalAmount <= 0)) {
+      if (paymentWithCurrency.totalAmount > 0) {
+        paymentWithCurrency.finalAmount = paymentWithCurrency.totalAmount;
+      } else if (paymentWithCurrency.amount > 0) {
+        paymentWithCurrency.finalAmount = paymentWithCurrency.amount;
+      } else {
+        throw new ReactionError(
+          "payment-invalid",
+          "Cannot determine payment amount for EasyPaisa payment"
+        );
+      }
+    }
 
     PaymentSchema.validate(paymentWithCurrency);
 
@@ -210,7 +210,7 @@ export default async function placeOrder(context, input) {
     placedFrom,
     isGuestUser,
     guestToken,
-    easyPaisaNumber
+    jazzCashNumber
   } = input;
   //console.log("input ", input)
   const {
@@ -248,9 +248,9 @@ export default async function placeOrder(context, input) {
     const isOpen = await checkIfTime(startTime, endTime);
 
     //console.log("Is branch open?", isOpen, "branch.name ", branchData.name);
-    if (!isOpen) {
-      throw new ReactionError("access-denied", `${branchData.name} Branch is closed for now. Please try between ${branchData.Timing}`);
-    }
+    // if (!isOpen) {
+    //   throw new ReactionError("access-denied", `${branchData.name} Branch is closed for now. Please try between ${branchData.Timing}`);
+    // }
   }
   if (branchData) {
     prepTime = branchData.prepTime;
@@ -390,38 +390,38 @@ export default async function placeOrder(context, input) {
   }
   //console.log("fulfillmentGroups?.[0]?.paymentMethod ", fulfillmentGroups?.[0]?.paymentMethod)
   let easyPaisaResponse;
-  //console.log("orderId,null,payments[0].finalAmount,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
+  //console.log("orderId,null,payments[0].finalAmount,null,jazzCashNumber, email ", orderId, null, payments[0].finalAmount, null, jazzCashNumber, email)
   
   if (fulfillmentGroups[0].paymentMethod == "EASYPAISA") {
-    //console.log("orderId,null,payments[0].finalAmount,null,easyPaisaNumber, email ", orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
+    console.log("orderId,null,payments[0].finalAmount,null,jazzCashNumber, email ", orderId, null, payments[0].finalAmount, null, jazzCashNumber, email)
     
     
     
-    // easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount, null, easyPaisaNumber, email)
-    // //console.log("easyPaisaResponse ", easyPaisaResponse)
-    // const transactionRecord = {
-    //   orderId,
-    //   accountId,
-    //   email,
-    //   // transactionId: '3279DELIVERYCHARGES508224',
-    //   // transactionDateTime: '17/12/2024 12:24 PM',
-    //   transactionId: easyPaisaResponse?.transactionId,
-    //   transactionDateTime: easyPaisaResponse?.transactionDateTime,
-    //   easyPaisaNumber: easyPaisaNumber
-    // }
+    easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount, null, jazzCashNumber, email)
+    console.log("easyPaisaResponse ", easyPaisaResponse)
+    const transactionRecord = {
+      orderId,
+      accountId,
+      email,
+      // transactionId: '3279DELIVERYCHARGES508224',
+      // transactionDateTime: '17/12/2024 12:24 PM',
+      transactionId: easyPaisaResponse?.transactionId,
+      transactionDateTime: easyPaisaResponse?.transactionDateTime,
+      jazzCashNumber: jazzCashNumber
+    }
 
-    // //console.log("TRANSACTION REOCRD", transactionRecord)
-    // const newTransaction = await Transaction.insertOne(transactionRecord)
-    // //console.log("newTransaction ", newTransaction)
+    console.log("TRANSACTION REOCRD", transactionRecord)
+    const newTransaction = await Transaction.insertOne(transactionRecord)
+    console.log("newTransaction ", newTransaction)
   }
-  // if (fulfillmentGroups[0].paymentMethod == "EASYPAISA" && easyPaisaResponse?.responseCode != "0000") {
-  //   throw new ReactionError(
-  //     "transaction-failed",
-  //     "Transaction has been failed"
-  //   );
-  // }
+  if (fulfillmentGroups[0].paymentMethod == "EASYPAISA" && easyPaisaResponse?.responseCode != "0000") {
+    throw new ReactionError(
+      "transaction-failed",
+      "Transaction has been failed"
+    );
+  }
 
-  //console.log("fulfillmentGroups[0].paymentMethod", fulfillmentGroups[0].paymentMethod)
+  console.log("fulfillmentGroups[0].paymentMethod", fulfillmentGroups[0].paymentMethod)
 
   // Create anonymousAccessToken if no account ID
   const fullToken = accountId ? null : getAnonymousAccessToken();
