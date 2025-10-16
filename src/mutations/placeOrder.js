@@ -448,6 +448,7 @@ export default async function placeOrder(context, input) {
     deliveryTime,
     Latitude,
     Longitude,
+    // isPaid: transactionRecord?.responseCode == "0000",
     paymentMethod: fulfillmentGroups[0].paymentMethod,
     transactionId: transactionRecord?.transactionId?transactionRecord?.transactionId.toString():fulfillmentGroups[0].paymentMethod,
   };
@@ -610,7 +611,7 @@ export default async function placeOrder(context, input) {
     },
     {
       $addFields: {
-        isPaid: { $cond: [{ $eq: ["$paymentMethod", "EASYPAISA"] }, false, false] }, // for easyPaisa payment method, we are not marking it as paid as user pays to rider on delviery
+        isPaid: { $cond: [{ $eq: ["$paymentMethod", "EASYPAISA"] }, true, false] }, // for easyPaisa payment method, we are not marking it as paid as user pays to rider on delviery
         isGuestUser: { $cond: [{ $eq: ["$accountId", null] }, true, false] },
       },
     },
