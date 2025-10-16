@@ -449,11 +449,11 @@ export default async function placeOrder(context, input) {
     Latitude,
     Longitude,
     paymentMethod: fulfillmentGroups[0].paymentMethod,
-    transactionId: transactionRecord?.transactionId?transactionRecord?.transactionId.toString():null,
+    transactionId: transactionRecord?.transactionId?transactionRecord?.transactionId.toString():fulfillmentGroups[0].paymentMethod,
   };
 
 
-  //console.log("ORDER RECORD", order)
+  console.log("ORDER RECORD", order)
 
   if (fullToken) {
     const dbToken = { ...fullToken };
