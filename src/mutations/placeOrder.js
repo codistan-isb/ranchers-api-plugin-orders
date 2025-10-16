@@ -383,7 +383,7 @@ export default async function placeOrder(context, input) {
     
     easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount-discountTotal, null, jazzCashNumber, email)
     console.log("easyPaisaResponse ", easyPaisaResponse)
-    const transactionRecord = {
+     transactionRecord = {
       orderId,
       accountId,
       email,
@@ -448,7 +448,7 @@ export default async function placeOrder(context, input) {
     deliveryTime,
     Latitude,
     Longitude,
-    // isPaid: transactionRecord?.responseCode == "0000",
+    isPaid: transactionRecord?.responseCode == "0000",
     paymentMethod: fulfillmentGroups[0].paymentMethod,
     transactionId: transactionRecord?.transactionId?transactionRecord?.transactionId.toString():fulfillmentGroups[0].paymentMethod,
   };

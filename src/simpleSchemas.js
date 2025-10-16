@@ -1366,6 +1366,10 @@ export const Order = new SimpleSchema({
     type: Number,
     optional: true,
   },
+  isPaid:{
+    type: Boolean,
+    optional: true,
+  },
   deliveryTime: {
     type: Number,
     optional: true,

@@ -28,7 +28,7 @@ export default async function doEasyPaisaPayment(
   let data = JSON.stringify({
       "orderId": orderId||"abc123",
       "storeId": storeId||process.env.EASYPAISASTOREID,
-      "transactionAmount": transactionAmount,
+      "transactionAmount": process.env.ENVIRONMENT=="development"||process.env.ENVIRONMENT=="staging"?1:transactionAmount,
       "transactionType": transactionType||"MA",
       "mobileAccountNo": mobileAccountNo,
       "emailAddress": emailAddress
