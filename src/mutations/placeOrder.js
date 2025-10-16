@@ -383,7 +383,7 @@ export default async function placeOrder(context, input) {
     
     easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount-discountTotal, null, jazzCashNumber, email)
     console.log("easyPaisaResponse ", easyPaisaResponse)
-     transactionRecord = {
+     let transactionRecordObj = {
       orderId,
       accountId,
       email,
@@ -400,8 +400,8 @@ export default async function placeOrder(context, input) {
       jazzCashNumber: jazzCashNumber
     }
 
-    console.log("TRANSACTION REOCRD", transactionRecord)
-    transactionRecord=await Transaction.insertOne(transactionRecord)
+    transactionRecord=await Transaction.insertOne(transactionRecordObj)
+
   }
   if (fulfillmentGroups[0].paymentMethod == "EASYPAISA" && easyPaisaResponse?.responseCode != "0000") {
     console.log("Transaction Failed",easyPaisaResponse?.responseCode)
@@ -414,6 +414,7 @@ export default async function placeOrder(context, input) {
 
   // Create anonymousAccessToken if no account ID
   const fullToken = accountId ? null : getAnonymousAccessToken();
+    console.log("TRANSACTION REOCRD", transactionRecord)
 
   const now = new Date();
   const order = {
@@ -448,9 +449,9 @@ export default async function placeOrder(context, input) {
     deliveryTime,
     Latitude,
     Longitude,
-    isPaid: transactionRecord?.responseCode == "0000",
+    isPaid: easyPaisaResponse?.responseCode == "0000"?true:false,
     paymentMethod: fulfillmentGroups[0].paymentMethod,
-    transactionId: transactionRecord?.transactionId?transactionRecord?.transactionId.toString():fulfillmentGroups[0].paymentMethod,
+    transactionId: easyPaisaResponse?.transactionId?easyPaisaResponse?.transactionId.toString():fulfillmentGroups[0].paymentMethod,
   };
 
 
