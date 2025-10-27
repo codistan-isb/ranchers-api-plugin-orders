@@ -2,6 +2,7 @@ import accounting from "accounting-js";
 import Random from "@reactioncommerce/random";
 import ReactionError from "@reactioncommerce/reaction-error";
 import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
+import checkIfTime from "../util/checkIfTime.js";
 
 /**
  * @summary Builds an order item
@@ -29,7 +30,15 @@ export default async function buildOrderItem(context, { currencyCode, inputItem,
     parentVariant,
     variant: chosenVariant
   } = await queries.findProductAndVariant(context, productId, productVariantId);
-
+  
+  console.log("chosenProduct ",chosenProduct);
+  if(chosenProduct?.isTimeBound){
+        const isDealAvailable = await checkIfTime(chosenProduct?.timeBounds?.startTime, chosenProduct?.timeBounds?.endTime);
+      console.log("isDealAvailable ",isDealAvailable);
+      if(!isDealAvailable){
+        throw new ReactionError("invalid", `Sorry, "${chosenProduct.title}" deal is not available now. Kindly remove from cart to proceed.`);
+      }
+  }
   const variantPriceInfo = await queries.getVariantPrice(context, chosenVariant, currencyCode);
   let finalPrice = (variantPriceInfo || {}).price;
   console.log("finalPrice ",finalPrice)
