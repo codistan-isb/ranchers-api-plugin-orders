@@ -12,7 +12,7 @@ import checkIfTime from "../util/checkIfTime.js";
  * @param {Object} cart - The cart this order is being built from
  * @returns {Promise<Object>} An order item, matching the schema needed for insertion in the Orders collection
  */
-export default async function buildOrderItem(context, { currencyCode, inputItem, cart }) {
+export default async function buildOrderItem(context, { currencyCode, inputItem, cart,type }) {
   const { queries, collections } = context;
   const accountId = context.userId;
   // console.log(context.userId)
@@ -24,24 +24,26 @@ export default async function buildOrderItem(context, { currencyCode, inputItem,
     quantity
   } = inputItem;
   const { productId, productVariantId } = productConfiguration;
-  console.log("currencyCode, inputItem, cart ",currencyCode, inputItem, cart)
   const {
     catalogProduct: chosenProduct,
     parentVariant,
     variant: chosenVariant
   } = await queries.findProductAndVariant(context, productId, productVariantId);
   
-  console.log("chosenProduct ",chosenProduct);
   if(chosenProduct?.isTimeBound){
         const isDealAvailable = await checkIfTime(chosenProduct?.timeBounds?.startTime, chosenProduct?.timeBounds?.endTime);
-      console.log("isDealAvailable ",isDealAvailable);
       if(!isDealAvailable){
         throw new ReactionError("invalid", `Sorry, "${chosenProduct.title}" deal is not available now. Kindly remove from cart to proceed.`);
       }
   }
+  if(chosenProduct?.isDelivery==false && type == 'shipping'){
+    throw new ReactionError("invalid", `Sorry, "${chosenProduct.title}" is only available for Takeaway. Kindly change Order type to Takeaway to proceed or remove this product from cart.`);
+  }
+  if(chosenProduct?.isTakeaway ==false && type == 'pickup'){
+    throw new ReactionError("invalid", `Sorry, "${chosenProduct.title}" is only available for Delivery. Kindly change Order type to Delivery to proceed or remove this product from cart.`);
+  }
   const variantPriceInfo = await queries.getVariantPrice(context, chosenVariant, currencyCode);
   let finalPrice = (variantPriceInfo || {}).price;
-  console.log("finalPrice ",finalPrice)
 
   // Handle null or undefined price returned. Don't allow sale.
   if (!finalPrice && finalPrice !== 0) {

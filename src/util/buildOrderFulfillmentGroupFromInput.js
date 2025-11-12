@@ -56,7 +56,7 @@ export default async function buildOrderFulfillmentGroupFromInput(
   if (items) {
     group.items = await Promise.all(
       items.map((inputItem) =>
-        buildOrderItem(context, { currencyCode, inputItem, cart })
+        buildOrderItem(context, { currencyCode, inputItem, cart ,type})
       )
     );
     console.log("group in after group.items = await Promise.all ",group)

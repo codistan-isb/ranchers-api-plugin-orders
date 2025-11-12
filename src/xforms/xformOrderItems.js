@@ -21,7 +21,6 @@ export default async function xformOrderItems(context, items) {
   // Transform order items
   const xformedItems = items.map((item, index) => {
     const productInfo = productInfos[index];
-    console.log("productInfo ",productInfo)
     return {
       ...item,
       productConfiguration: {
