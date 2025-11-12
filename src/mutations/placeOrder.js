@@ -240,9 +240,9 @@ export default async function placeOrder(context, input) {
     // Call the checkIfTime function
     const isOpen = await checkIfTime(startTime, endTime);
 
-    // if (!isOpen) {
-    //   throw new ReactionError("access-denied", `${branchData.name} Branch is closed for now. Please try between ${branchData.Timing}`);
-    // }
+    if (!isOpen) {
+      throw new ReactionError("access-denied", `${branchData.name} Branch is closed for now. Please try between ${branchData.Timing}`);
+    }
   }
   if (branchData) {
     prepTime = branchData.prepTime;
