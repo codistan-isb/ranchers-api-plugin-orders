@@ -4,7 +4,7 @@ export default async function sendWhatsAppMessage(context, input) {
   console.log("input", input);
   let { generatedID, createdBy, OrderStatus, rejectionReason } = input;
   let { collections } = context;
-  let { Accounts, WhatsAppMessage } = collections;
+  let { Accounts, WhatsAppMessage, users } = collections;
   let mobileNumber, firstName, lastName, message;
   let findUserResponse = await Accounts.findOne({ _id: createdBy });
   console.log("findUserResponse", findUserResponse);
