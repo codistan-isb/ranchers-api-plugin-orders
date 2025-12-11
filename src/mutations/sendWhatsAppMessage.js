@@ -1,24 +1,14 @@
 let WHATSAPPAPIKEY = process.env.WHATSAPP_API_KEY;
 import axios from "axios";
 export default async function sendWhatsAppMessage(context, input) {
-  console.log("input", input);
-  let { generatedID, createdBy, OrderStatus, rejectionReason } = input;
+  let { generatedID, createdBy, OrderStatus, rejectionReason,order } = input;
   let { collections } = context;
   let { Accounts, WhatsAppMessage, users } = collections;
   let mobileNumber, firstName, lastName, message;
-  let findUserResponse = await Accounts.findOne({ _id: createdBy });
-  console.log("findUserResponse", findUserResponse);
-  if (findUserResponse?.profile?.phone) {
-    mobileNumber = findUserResponse?.profile?.phone;
-    firstName = findUserResponse?.profile?.firstName;
-    lastName = findUserResponse?.profile?.lastName;
-  } else {
-    let ifNotUser = await users.findOne({ _id: createdBy });
-    mobileNumber = ifNotUser?.phone;
-    firstName = ifNotUser?.firstName;
-    lastName = ifNotUser?.lastName;
-  }
-  console.log("mobileNumber", mobileNumber.substring(1));
+  mobileNumber = order?.shipping[0]?.address?.phone;
+  firstName = order?.shipping[0]?.address?.fullName;
+  lastName = "";
+
   if (OrderStatus === "placed" || OrderStatus === "new") {
     message = `𝐃𝐞𝐚𝐫${
       firstName + " " + lastName
@@ -63,7 +53,7 @@ Your flavor ride is almost there! 🛵🔥
     maxBodyLength: Infinity,
     url: `https://wa.sabtech.org/api/send.php?api_key=${WHATSAPPAPIKEY}&mobile=92${mobileNumber.substring(
       1
-    )}&priority=0&message=${message}`,
+    )}&priority=0&message=${encodeURIComponent(message)}`,
     headers: {},
   };
   console.log("config", config);

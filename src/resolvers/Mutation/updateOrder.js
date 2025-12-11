@@ -34,9 +34,11 @@ export default async function updateOrder(parentResult, { input }, context) {
     // Send email to notify customer of a refund
     sendOrderEmail(context, order, "confirmed");
     await context.mutations.sendWhatsAppMessage(context, {
+      
       createdBy: order?.accountId,
       generatedID: order?.kitchenOrderID,
       OrderStatus: "confirmed",
+      order
     });
   }
   return {

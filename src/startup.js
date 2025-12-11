@@ -434,6 +434,7 @@ export default async function ordersStartup(context) {
         createdBy,
         generatedID,
         OrderStatus: "placed",
+        order
       });
       // let sendMessage = await whatsAppMessage(context,createdBy,generatedID);
     }
@@ -461,6 +462,7 @@ export default async function ordersStartup(context) {
       createdBy: order?.accountId,
       generatedID: order?.kitchenOrderID,
       OrderStatus: status,
+      order
     });
   });
 }
