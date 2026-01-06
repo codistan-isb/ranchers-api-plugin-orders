@@ -3,6 +3,8 @@ import i18n from "./i18n/index.js";
 import cors from "cors";
 import bodyParser from "body-parser";
 import morgan from "morgan";
+import axios from "axios";
+import https from "https";
 import mutations from "./mutations/index.js";
 import policies from "./policies.json";
 import preStartup from "./preStartup.js";
@@ -22,6 +24,11 @@ import getDataForOrderEmail from "./util/getDataForOrderEmail.js";
 
 function IPNPayment(context) {
   const { app } = context;
+
+  // Optional: allow forwarding to Finnect with self-signed certs if explicitly enabled
+  const finnectHttpsAgent = process.env.FINNECT_ALLOW_INSECURE_TLS === "true"
+    ? new https.Agent({ rejectUnauthorized: false })
+    : undefined;
 
   if (app.expressApp) {
     app.expressApp.use(cors());
@@ -75,6 +82,250 @@ function IPNPayment(context) {
         });
       }
     });
+
+    // Webhook endpoint for receiving EasyPaisa events (GET request with URL parameter)
+    app.expressApp.post("/webhook/easypaisa", async (req, res) => {
+      try {
+        console.log("EasyPaisa webhook received with query params:", req.query);
+
+        const { collections } = context;
+        const { Orders, Transaction } = collections;
+        const statusUrl = req.query.url;
+
+        if (!statusUrl) {
+          return res.status(400).json({
+            success: false,
+            message: "Missing url parameter",
+          });
+        }
+
+        // Validate URL to prevent SSRF attacks
+        let parsedUrl;
+        try {
+          parsedUrl = new URL(statusUrl);
+        } catch (err) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid URL format",
+          });
+        }
+
+        // Whitelist allowed domains for EasyPaisa
+        const allowedDomains = ["easypay.easypaisa.com.pk"];
+        const isAllowedDomain = allowedDomains.some(domain => parsedUrl.hostname === domain);
+
+        if (!isAllowedDomain) {
+          console.warn(`Rejected request to unauthorized domain: ${parsedUrl.hostname}`);
+          return res.status(403).json({
+            success: false,
+            message: "URL domain not allowed. Only EasyPaisa domains are accepted.",
+          });
+        }
+
+        console.log("EasyPaisa status URL:", statusUrl);
+
+        // Fetch transaction status from EasyPaisa
+        let transactionData;
+        try {
+          const statusResponse = await axios.get(statusUrl, {
+            timeout: 10000, // 10 second timeout
+          });
+          transactionData = statusResponse.data;
+          console.log("EasyPaisa transaction data:", JSON.stringify(transactionData, null, 2));
+        } catch (fetchError) {
+          console.error("Error fetching EasyPaisa status:", fetchError.message);
+          return res.status(500).json({
+            success: false,
+            message: "Error fetching transaction status from EasyPaisa",
+            error: fetchError.message,
+          });
+        }
+
+        // Forward to Finnect with statusUrl as query param
+        try {
+          const forwardResponse = await axios.post(
+            "https://api.finnect.com.pk/ipn/easypaisa",
+            {},
+            {
+              params: { url: statusUrl },
+              headers: {
+                "Content-Type": "application/json",
+              },
+              timeout: 10000,
+              httpsAgent: finnectHttpsAgent,
+            }
+          );
+          console.log("Forwarded to Finnect successfully:", forwardResponse.data);
+        } catch (forwardError) {
+          console.error("Error forwarding to Finnect:", forwardError.message);
+          // continue processing even if forward fails
+        }
+
+        // Update order based on transaction data
+        const orderIdFromTxn = transactionData?.order_id || transactionData?.orderId;
+        const transactionIdFromTxn = transactionData?.transaction_id || transactionData?.transactionId;
+        const transactionStatus = (transactionData?.transaction_status || "").toUpperCase();
+        const responseCode = transactionData?.response_code;
+
+        if (orderIdFromTxn) {
+          const isSuccess = transactionStatus === "PAID" && responseCode === "0000";
+          try {
+            await Orders.updateOne(
+              { _id: orderIdFromTxn },
+              {
+                $set: {
+                  isPaid: isSuccess,
+                  paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
+                  transactionId: transactionIdFromTxn || null,
+                  updatedAt: new Date(),
+                },
+              }
+            );
+            console.log(`Order ${orderIdFromTxn} updated from EasyPaisa webhook with status ${transactionStatus}`);
+          } catch (orderUpdateError) {
+            console.error("Error updating order from EasyPaisa webhook:", orderUpdateError.message);
+          }
+
+          // Optionally persist transaction data for audit
+          try {
+            await Transaction.updateOne(
+              {
+                orderId: orderIdFromTxn
+              },
+              {
+                $set: {
+                  orderId: orderIdFromTxn,
+                  amount: transactionData?.transaction_amount,
+                  responseMessage: `Transaction description: ${transactionData?.description}`,
+                  raw: transactionData,
+                  updatedAt: new Date(),
+                  responseCode: responseCode,
+                  status: transactionStatus,
+                  transactionId: transactionIdFromTxn,
+                  transactionDateTime: transactionData?.paid_datetime,
+                }
+              }
+            );
+          } catch (transactionUpdateError) {
+            console.error("Error upserting transaction record from EasyPaisa webhook:", transactionUpdateError.message);
+          }
+        } else {
+          console.warn("EasyPaisa webhook missing order_id; skipping order update");
+        }
+
+
+        // Send acknowledgment response
+        return res.status(200).json({
+          success: true,
+          message: "Webhook processed successfully",
+          transactionData: transactionData,
+        });
+      } catch (error) {
+        console.error("Error processing EasyPaisa webhook:", error);
+        return res.status(500).json({
+          success: false,
+          message: "Error processing webhook",
+          error: error.message,
+        });
+      }
+    });
+
+    // // Webhook endpoint for receiving events (POST)
+    // app.expressApp.post("/webhook/easypaisa", async (req, res) => {
+    //   try {
+    //     console.log("Webhook event received:", req.body);
+
+    //     const { collections } = context;
+    //     const { Orders, Transaction } = collections;
+    //     const payload = req.body;
+
+    //     // Log webhook payload for debugging
+    //     console.log("Webhook payload:", JSON.stringify(payload, null, 2));
+
+    //     // // Forward the webhook to the external API
+    //     // try {
+    //     //   const forwardResponse = await axios.post(
+    //     //     "https://api.finnect.com.pk/ipn/easypaisa",
+    //     //     payload,
+    //     //     {
+    //     //       headers: {
+    //     //         "Content-Type": "application/json",
+    //     //       },
+    //     //       timeout: 10000, // 10 second timeout
+    //     //     }
+    //     //   );
+    //     //   console.log("Webhook forwarded successfully:", forwardResponse.data);
+    //     // } catch (forwardError) {
+    //     //   console.error("Error forwarding webhook to external API:", forwardError.message);
+    //     //   // Continue processing even if forwarding fails
+    //     // }
+
+    //     // Process webhook based on event type
+    //     // const eventType = payload.eventType || payload.event_type || payload.type;
+
+    //     // switch (eventType) {
+    //     //   case "payment.success":
+    //     //   case "transaction.completed":
+    //     //     // Handle successful payment webhook
+    //     //     if (payload.orderId || payload.order_id) {
+    //     //       const orderId = payload.orderId || payload.order_id;
+    //     //       const transactionId = payload.transactionId || payload.transaction_id;
+
+    //     //       await Orders.updateOne(
+    //     //         { _id: orderId },
+    //     //         {
+    //     //           $set: {
+    //     //             isPaid: true,
+    //     //             paymentStatus: "SUCCESS",
+    //     //             transactionId: transactionId,
+    //     //             updatedAt: new Date(),
+    //     //           },
+    //     //         }
+    //     //       );
+
+    //     //       console.log(`Order ${orderId} marked as paid via webhook`);
+    //     //     }
+    //     //     break;
+
+    //     //   case "payment.failed":
+    //     //   case "transaction.failed":
+    //     //     // Handle failed payment webhook
+    //     //     if (payload.orderId || payload.order_id) {
+    //     //       const orderId = payload.orderId || payload.order_id;
+
+    //     //       await Orders.updateOne(
+    //     //         { _id: orderId },
+    //     //         {
+    //     //           $set: {
+    //     //             paymentStatus: "FAILED",
+    //     //             updatedAt: new Date(),
+    //     //           },
+    //     //         }
+    //     //       );
+
+    //     //       console.log(`Order ${orderId} marked as payment failed via webhook`);
+    //     //     }
+    //     //     break;
+
+    //     //   default:
+    //     //     console.log(`Unhandled webhook event type: ${eventType}`);
+    //     // }
+
+    //     // Send acknowledgment response
+    //     return res.status(200).json({
+    //       success: true,
+    //       message: "Webhook received successfully",
+    //       // eventType: eventType,
+    //     });
+    //   } catch (error) {
+    //     console.error("Error processing webhook:", error);
+    //     return res.status(500).json({
+    //       success: false,
+    //       message: "Error processing webhook",
+    //       error: error.message,
+    //     });
+    //   }
+    // });
   }
 }
 export default async function register(app) {

@@ -493,29 +493,30 @@ export default async function placeOrder(context, input) {
       .then((response) => {
         console.log("easyPaisaResponse ", response)
         
-        const transactionRecordObj = {
-          orderId,
-          accountId,
-          email,
-          responseCode: response?.responseCode,
-          responseMessage: response?.responseMessage,
-          amount: payments[0].finalAmount-discountTotal,
-          status: response?.responseCode == "0000" ? "SUCCESS" : "FAILED",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          transactionId: response?.transactionId,
-          transactionDateTime: response?.transactionDateTime,
-          jazzCashNumber: jazzCashNumber
-        }
-
-        return Transaction.insertOne(transactionRecordObj);
+     
       })
-      .then((result) => {
-        console.log("TRANSACTION RECORD", result)
-      })
+      // .then((result) => {
+      //   console.log("TRANSACTION RECORD", result)
+      // })
       .catch((error) => {
         Logger.error("Error processing EasyPaisa payment or inserting transaction record:", error)
       });
+         const transactionRecordObj = {
+          orderId,
+          accountId,
+          email,
+          responseCode: "NA",
+          responseMessage: "NA",
+          amount: payments[0].finalAmount-discountTotal,
+          status: "Pending",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          transactionId: "NA",
+          transactionDateTime: "NA",
+          jazzCashNumber: jazzCashNumber
+        }
+
+         Transaction.insertOne(transactionRecordObj);
   }
 
 
