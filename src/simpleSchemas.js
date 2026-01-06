@@ -1459,6 +1459,7 @@ export const Order = new SimpleSchema({
   },
   transactionId: String,
   paymentMethod: String,
+  paymentStatus:String,
   Longitude: {
     type: Number,
     optional: true,

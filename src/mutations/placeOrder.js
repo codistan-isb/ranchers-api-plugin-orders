@@ -375,46 +375,9 @@ export default async function placeOrder(context, input) {
       "Order amount must be greater than 500"
     );
   }
-  let easyPaisaResponse;
-  let  transactionRecord;
-  if (fulfillmentGroups[0].paymentMethod == "EASYPAISA") {
-    
-    
-    
-    easyPaisaResponse = await doEasyPaisaPayment(orderId, null, payments[0].finalAmount-discountTotal, null, jazzCashNumber, email)
-    console.log("easyPaisaResponse ", easyPaisaResponse)
-     let transactionRecordObj = {
-      orderId,
-      accountId,
-      email,
-      // transactionId: '3279DELIVERYCHARGES508224',
-      // transactionDateTime: '17/12/2024 12:24 PM',
-      responseCode: easyPaisaResponse?.responseCode,
-      responseMessage: easyPaisaResponse?.responseMessage,
-      amount: payments[0].finalAmount-discountTotal,
-      status: easyPaisaResponse?.responseCode == "0000" ? "SUCCESS" : "FAILED",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      transactionId: easyPaisaResponse?.transactionId,
-      transactionDateTime: easyPaisaResponse?.transactionDateTime,
-      jazzCashNumber: jazzCashNumber
-    }
-
-    transactionRecord=await Transaction.insertOne(transactionRecordObj)
-
-  }
-  if (fulfillmentGroups[0].paymentMethod == "EASYPAISA" && easyPaisaResponse?.responseCode != "0000") {
-    console.log("Transaction Failed",easyPaisaResponse?.responseCode)
-    throw new ReactionError(
-      "transaction-failed",
-      "Transaction has been failed"
-    );
-  }
-
-
+ 
   // Create anonymousAccessToken if no account ID
   const fullToken = accountId ? null : getAnonymousAccessToken();
-    console.log("TRANSACTION REOCRD", transactionRecord)
 
   const now = new Date();
   const order = {
@@ -449,9 +412,10 @@ export default async function placeOrder(context, input) {
     deliveryTime,
     Latitude,
     Longitude,
-    isPaid: easyPaisaResponse?.responseCode == "0000"?true:false,
     paymentMethod: fulfillmentGroups[0].paymentMethod,
-    transactionId: easyPaisaResponse?.transactionId?easyPaisaResponse?.transactionId.toString():fulfillmentGroups[0].paymentMethod,
+    isPaid: false,
+    transactionId: "null",
+    paymentStatus: "PENDING",
   };
 
 
@@ -521,8 +485,42 @@ export default async function placeOrder(context, input) {
     ...order,
     paymentMethod: fulfillmentGroups?.[0]?.paymentMethod || "CASH",
   });
-  //Getting data for real time event
-  const ordersResp = await Orders.aggregate([
+
+   let easyPaisaResponse;
+  if (fulfillmentGroups[0].paymentMethod == "EASYPAISA") {
+    // Process EasyPaisa payment non-blocking (fire and forget)
+    doEasyPaisaPayment(orderId, null, payments[0].finalAmount-discountTotal, null, jazzCashNumber, email)
+      .then((response) => {
+        console.log("easyPaisaResponse ", response)
+        
+        const transactionRecordObj = {
+          orderId,
+          accountId,
+          email,
+          responseCode: response?.responseCode,
+          responseMessage: response?.responseMessage,
+          amount: payments[0].finalAmount-discountTotal,
+          status: response?.responseCode == "0000" ? "SUCCESS" : "FAILED",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          transactionId: response?.transactionId,
+          transactionDateTime: response?.transactionDateTime,
+          jazzCashNumber: jazzCashNumber
+        }
+
+        return Transaction.insertOne(transactionRecordObj);
+      })
+      .then((result) => {
+        console.log("TRANSACTION RECORD", result)
+      })
+      .catch((error) => {
+        Logger.error("Error processing EasyPaisa payment or inserting transaction record:", error)
+      });
+  }
+
+
+  //Getting data for real time event (non-blocking)
+  Orders.aggregate([
     { $match: {
       _id:newOrder.ops[0]?._id
     } },
@@ -742,37 +740,18 @@ export default async function placeOrder(context, input) {
         transferFromBranchInfo: 1
       },
     }
-  ]).toArray();
-  pubSub.publish("ORDER_CREATED", {
-    newOrder: ordersResp[0]
-  });
-  // //console.log("newEvent ",newEvent)
-  // sendOrderEmail(context, order, "new");
-  // const message = "Your order has been placed";
-  // const appType = "customer";
-  // const id = userId;
-  // const orderID = orderId;
-  // const paymentIntentClientSecret =
-  //   context.mutations.oneSignalCreateNotification(context, {
-  //     message,
-  //     id,
-  //     appType,
-  //     userId,
-  //     orderID,
-  //   });
-  // const message1 = "New Order is placed";
-  // const appType1 = "admin";
-  // const id1 = userId;
-  // const paymentIntentClientSecret1 =
-  //   context.mutations.oneSignalCreateNotification(context, {
-  //     message: message1,
-  //     id: id1,
-  //     appType: appType1,
-  //     userId: userId,
-  //   });
-  // CartHistory.insertOne(cart);
+  ]).toArray()
+    .then((ordersResp) => {
+      if (ordersResp && ordersResp[0]) {
+        pubSub.publish("ORDER_CREATED", {
+          newOrder: ordersResp[0]
+        });
+      }
+    })
+    .catch((error) => {
+      Logger.error("Error fetching order or publishing ORDER_CREATED event:", error);
+    });
   
-  //console.log("generatedID", generatedID);
   await appEvents.emit("afterOrderCreate", {
     createdBy: userId,
     order,
