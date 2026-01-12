@@ -26,5 +26,8 @@ export default {
   updateOrderTime,
   cancelCustomerOrder,
   updateReviewsRatings,
-  testNewOrderEvent
+  testNewOrderEvent,
+  async convertOrderToCash(parent, args, context) {
+    return context.mutations.convertOrderToCash(context, args.input);
+  }
 };

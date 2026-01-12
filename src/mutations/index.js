@@ -12,6 +12,7 @@ import updateOrderFulfillmentGroup from "./updateOrderFulfillmentGroup.js";
 import cancelCustomerOrder from "./cancelCustomerOrder.js";
 import sendWhatsAppMessage from "./sendWhatsAppMessage.js";
 import testNewOrderEvent from "./testNewOrderEvent.js";
+import convertOrderToCash from "./convertOrderToCash.js";
 export default {
   addOrderFulfillmentGroup,
   cancelOrderItem,
@@ -26,5 +27,6 @@ export default {
   sendWhatsAppMessage,
   favoriteOrder,
   removeFavoriteOrder,
-  testNewOrderEvent
+  testNewOrderEvent,
+  convertOrderToCash
 };

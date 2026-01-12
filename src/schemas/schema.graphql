@@ -215,6 +215,14 @@ extend type Mutation {
     input: favoriteOrderInput!
   ): removeFavoriteOrderPayload!
   testNewOrderEvent: Boolean!
+
+  """
+  Use this mutation to convert an order to cash payment and recalculate tax based on branch cash tax rate.
+  """
+  convertOrderToCash(
+    "Mutation input"
+    input: ConvertOrderToCashInput!
+  ): ConvertOrderToCashPayload!
 }
 "Allowed values for the `OrderFulfillmentGroupItems` sortBy parameter"
 enum OrderFulfillmentGroupItemsSortByField {
@@ -1030,6 +1038,15 @@ input PlaceOrderInput {
 input favoriteOrderInput {
   orderId: String
 }
+
+"Input for the convertOrderToCash mutation"
+input ConvertOrderToCashInput {
+  "An optional string identifying the mutation call, which will be returned in the response payload"
+  clientMutationId: String
+
+  "ID of the order to convert to cash"
+  orderId: ID!
+}
 # extend enum OrderStatusValue {
 #   new
 # }
@@ -1181,6 +1198,15 @@ type removeFavoriteOrderPayload {
   isRemoved: Boolean
 }
 
+"Response payload for the convertOrderToCash mutation"
+type ConvertOrderToCashPayload {
+  "The same string you sent with the mutation params, for matching mutation calls with their responses"
+  clientMutationId: String
+  status:Boolean
+  "The updated order with cash payment and recalculated tax"
+  order: PublicOrderInfoPayload!
+}
+
 "Response payload for the splitOrderItem mutation"
 type SplitOrderItemPayload {
   "The same string you sent with the mutation params, for matching mutation calls with their responses"
@@ -1195,56 +1221,36 @@ type SplitOrderItemPayload {
 
 "Response payload for publicOrderInfoById"
 type PublicOrderInfoPayload {
-  "Order reference ID (order number shown to customer)"
-  referenceId: String
-  "Order creation date"
-  createdAt: DateTime
-  "Order number (display label)"
-  orderNumber: String
-  "Order type (shipping, digital, etc.)"
-  orderType: String
+  "Payments for this order"
+  payments: [Payment]
   "Kitchen order ID"
   kitchenOrderID: String
   "Date of last update"
   updatedAt: DateTime
-  "Payment method (Cash on delivery, EasyPaisa, JazzCash, etc.)"
-  paymentOption: String
-  "Payment status"
-  paymentStatus: String
-  "Whether order is paid"
-  isPaid: Boolean
-  "Transaction ID"
-  transactionId: String
-  "Customer email"
-  email: String
-  "Shipping address"
-  shippingAddress: Address
-  "Billing/payment address"
-  billingAddress: Address
   "Order notes"
   notes: [OrderNote]
-  "Items in the order (from shipping group)"
-  items: [OrderItem]
-  "Payments for this order"
-  payments: [Payment]
-  "Order summary with totals"
-  summary: OrderSummary
+  "Customer email"
+  email: String
+  "Raw customer info object (shipping address)"
+  customerInfo: JSONObject
   "Order fulfillment groups"
   fulfillmentGroups: [OrderFulfillmentGroup]
-  "Order subtotal (before taxes and discounts)"
-  subtotal: Float
-  "Tax amount (GST/VAT)"
-  taxAmount: Float
-  "Discount amount"
-  discountAmount: Float
-  "Shipping/delivery charges"
-  shippingCharges: Float
+  "Order summary with totals"
+  summary: OrderSummary
+  "Payment method (Cash on delivery, EasyPaisa, JazzCash, etc.)"
+  paymentOption: String
   "Final total price"
   finalPrice: Float
-  "Alternate/display price (if different currency conversion)"
-  displayPrice: Float
-  "Raw customer info object"
-  customerInfo: JSONObject
+  "Order type (shipping, digital, etc.)"
+  orderType: String
+  "Discount amount"
+  discountAmount: Float
+  "Whether order is paid"
+  isPaid: Boolean
+  "Payment status"
+  paymentStatus: String
+  "Transaction ID"
+  transactionId: String
 }
 
 "Response payload for the updateOrder mutation"
