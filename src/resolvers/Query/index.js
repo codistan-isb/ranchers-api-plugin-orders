@@ -5,6 +5,7 @@ import ordersByAccountId from "./ordersByAccountId.js";
 import refunds from "./refunds.js";
 import refundsByPaymentId from "./refundsByPaymentId.js";
 import getFavoriteOrders from "./getFavoriteOrders.js";
+import publicOrderInfoById from "./publicOrderInfoById.js";
 export default {
   orderById,
   orderByReferenceId,
@@ -12,5 +13,6 @@ export default {
   ordersByAccountId,
   refunds,
   refundsByPaymentId, 
-  getFavoriteOrders
+  getFavoriteOrders,
+  publicOrderInfoById
 };

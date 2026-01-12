@@ -117,6 +117,12 @@ extend type Query {
     "A valid anonymous access token for this order. Required if the order is not linked with an account."
     token: String
   ): [Refund]
+
+  "Public query to fetch condensed order info by order ID"
+  publicOrderInfoById(
+    "The order ID"
+    orderId: ID!
+  ): PublicOrderInfoPayload!
 }
 # type updateOrderTimePayload {
 #   deliveryTime: String
@@ -1185,6 +1191,60 @@ type SplitOrderItemPayload {
 
   "The updated order"
   order: Order!
+}
+
+"Response payload for publicOrderInfoById"
+type PublicOrderInfoPayload {
+  "Order reference ID (order number shown to customer)"
+  referenceId: String
+  "Order creation date"
+  createdAt: DateTime
+  "Order number (display label)"
+  orderNumber: String
+  "Order type (shipping, digital, etc.)"
+  orderType: String
+  "Kitchen order ID"
+  kitchenOrderID: String
+  "Date of last update"
+  updatedAt: DateTime
+  "Payment method (Cash on delivery, EasyPaisa, JazzCash, etc.)"
+  paymentOption: String
+  "Payment status"
+  paymentStatus: String
+  "Whether order is paid"
+  isPaid: Boolean
+  "Transaction ID"
+  transactionId: String
+  "Customer email"
+  email: String
+  "Shipping address"
+  shippingAddress: Address
+  "Billing/payment address"
+  billingAddress: Address
+  "Order notes"
+  notes: [OrderNote]
+  "Items in the order (from shipping group)"
+  items: [OrderItem]
+  "Payments for this order"
+  payments: [Payment]
+  "Order summary with totals"
+  summary: OrderSummary
+  "Order fulfillment groups"
+  fulfillmentGroups: [OrderFulfillmentGroup]
+  "Order subtotal (before taxes and discounts)"
+  subtotal: Float
+  "Tax amount (GST/VAT)"
+  taxAmount: Float
+  "Discount amount"
+  discountAmount: Float
+  "Shipping/delivery charges"
+  shippingCharges: Float
+  "Final total price"
+  finalPrice: Float
+  "Alternate/display price (if different currency conversion)"
+  displayPrice: Float
+  "Raw customer info object"
+  customerInfo: JSONObject
 }
 
 "Response payload for the updateOrder mutation"
