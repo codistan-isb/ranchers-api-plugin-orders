@@ -38,7 +38,8 @@ export default async function publicOrderInfoById(parent, { orderId }, context) 
   const payments = order.payments || [];
   const firstPayment = payments[0] || {};
 
-  const paymentMethod = (firstPayment.method || order.paymentMethod || "COD").toString().toUpperCase();
+  const paymentMethod = order.paymentMethod;
+  console.log("Payment Method:", paymentMethod);
   let paymentOption = "Cash on delivery";
   switch (paymentMethod) {
     case "EASYPAISA":
