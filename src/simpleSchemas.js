@@ -1366,7 +1366,9 @@ export const Order = new SimpleSchema({
     type: Number,
     optional: true,
   },
-  isPaid:{
+  msisdn: { type: String, optional: true }
+  ,
+  isPaid: {
     type: Boolean,
     optional: true,
   },
@@ -1459,7 +1461,7 @@ export const Order = new SimpleSchema({
   },
   transactionId: String,
   paymentMethod: String,
-  paymentStatus:String,
+  paymentStatus: String,
   Longitude: {
     type: Number,
     optional: true,

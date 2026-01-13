@@ -415,6 +415,7 @@ export default async function placeOrder(context, input) {
     paymentMethod: fulfillmentGroups[0].paymentMethod,
     isPaid: false,
     transactionId: "null",
+    msisdn: jazzCashNumber || null,
     paymentStatus: "PENDING",
   };
 
