@@ -12,6 +12,7 @@ import updateOrderTime from "./updateOrderTime.js";
 import cancelCustomerOrder from "./cancelCustomerOrder.js";
 import updateReviewsRatings from "./updateReviewsRatings.js";
 import testNewOrderEvent from "./testNewOrderEvent.js";
+import reattemptEasyPaisaPayment from "./reattemptEasyPaisaPayment.js";
 export default {
   addOrderFulfillmentGroup,
   cancelOrderItem,
@@ -27,6 +28,7 @@ export default {
   cancelCustomerOrder,
   updateReviewsRatings,
   testNewOrderEvent,
+  reattemptEasyPaisaPayment,
   async convertOrderToCash(parent, args, context) {
     return context.mutations.convertOrderToCash(context, args.input);
   }

@@ -223,6 +223,14 @@ extend type Mutation {
     "Mutation input"
     input: ConvertOrderToCashInput!
   ): ConvertOrderToCashPayload!
+
+  """
+  Use this mutation to reattempt EasyPaisa payment for an existing order.
+  """
+  reattemptEasyPaisaPayment(
+    "Mutation input"
+    input: ReattemptEasyPaisaPaymentInput!
+  ): ReattemptEasyPaisaPaymentPayload!
 }
 "Allowed values for the `OrderFulfillmentGroupItems` sortBy parameter"
 enum OrderFulfillmentGroupItemsSortByField {
@@ -1047,6 +1055,15 @@ input ConvertOrderToCashInput {
   "ID of the order to convert to cash"
   orderId: ID!
 }
+
+"Input for the reattemptEasyPaisaPayment mutation"
+input ReattemptEasyPaisaPaymentInput {
+
+
+  "ID of the order to reattempt payment for"
+  orderId: ID!
+
+}
 # extend enum OrderStatusValue {
 #   new
 # }
@@ -1205,6 +1222,18 @@ type ConvertOrderToCashPayload {
   status:Boolean
   "The updated order with cash payment and recalculated tax"
   order: PublicOrderInfoPayload!
+}
+
+"Response payload for the reattemptEasyPaisaPayment mutation"
+type ReattemptEasyPaisaPaymentPayload {
+
+
+  "Whether the payment attempt was successful"
+  success: Boolean!
+
+  "Message describing the payment result"
+  message: String
+
 }
 
 "Response payload for the splitOrderItem mutation"

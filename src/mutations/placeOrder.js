@@ -490,7 +490,7 @@ export default async function placeOrder(context, input) {
    let easyPaisaResponse;
   if (fulfillmentGroups[0].paymentMethod == "EASYPAISA") {
     // Process EasyPaisa payment non-blocking (fire and forget)
-    doEasyPaisaPayment(orderId, null, payments[0].finalAmount-discountTotal, null, jazzCashNumber, email)
+    doEasyPaisaPayment(kitchenOrderID,orderId, null, payments[0].finalAmount-discountTotal, null, jazzCashNumber, email)
       .then((response) => {
         console.log("easyPaisaResponse ", response)
         
@@ -504,12 +504,13 @@ export default async function placeOrder(context, input) {
       });
          const transactionRecordObj = {
           orderId,
+          kitchenOrderID,
           accountId,
           email,
           responseCode: "NA",
           responseMessage: "NA",
           amount: payments[0].finalAmount-discountTotal,
-          status: "Pending",
+          status: "PENDING",
           createdAt: new Date(),
           updatedAt: new Date(),
           transactionId: "NA",

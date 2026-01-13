@@ -162,7 +162,8 @@ function IPNPayment(context) {
         }
 
         // Update order based on transaction data
-        const orderIdFromTxn = transactionData?.order_id || transactionData?.orderId;
+        const orderIdFromTxn = transactionData?.order_id || transactionData?.optional1;
+        const kitchenOrderID = transactionData?.order_id || transactionData?.orderId;
         const transactionIdFromTxn = transactionData?.transaction_id || transactionData?.transactionId;
         const transactionStatus = (transactionData?.transaction_status || "").toUpperCase();
         const responseCode = transactionData?.response_code;
@@ -190,12 +191,13 @@ function IPNPayment(context) {
           try {
             await Transaction.updateOne(
               {
-                orderId: orderIdFromTxn
+                orderId: orderIdFromTxn,
+                kitchenOrderID: kitchenOrderID
               },
               {
                 $set: {
-                  orderId: orderIdFromTxn,
-                  amount: transactionData?.transaction_amount,
+                  // orderId: orderIdFromTxn,
+                  paidAmount: transactionData?.transaction_amount,
                   responseMessage: `Transaction description: ${transactionData?.description}`,
                   raw: transactionData,
                   updatedAt: new Date(),

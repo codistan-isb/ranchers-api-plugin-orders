@@ -13,6 +13,7 @@ import cancelCustomerOrder from "./cancelCustomerOrder.js";
 import sendWhatsAppMessage from "./sendWhatsAppMessage.js";
 import testNewOrderEvent from "./testNewOrderEvent.js";
 import convertOrderToCash from "./convertOrderToCash.js";
+import reattemptEasyPaisaPayment from "./reattemptEasyPaisaPayment.js";
 export default {
   addOrderFulfillmentGroup,
   cancelOrderItem,
@@ -28,5 +29,6 @@ export default {
   favoriteOrder,
   removeFavoriteOrder,
   testNewOrderEvent,
-  convertOrderToCash
+  convertOrderToCash,
+  reattemptEasyPaisaPayment
 };
