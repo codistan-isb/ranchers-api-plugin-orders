@@ -10,11 +10,11 @@ export default async function sendWhatsAppMessage(context, input) {
   lastName = "";
 
   if (OrderStatus === "placed" || OrderStatus === "new") {
-    message = `𝐃𝐞𝐚𝐫${
+    message = `𝐃𝐞𝐚𝐫 ${
       firstName + " " + lastName
     } , Thank you for choosing Ranchers Cafe! Your order ${generatedID} has been received. Please expect a confirmation call shortly to ensure accuracy. Once order confirmed, changes cannot be made. Estimated delivery time is "𝟒𝟓" minutes. We'll notify you when your order is ready for pickup or delivery.
-    𝐑𝐞𝐠𝐚𝐫𝐝𝐬,
-    𝐑𝐚𝐧𝐜𝐡𝐞𝐫𝐬 𝐂𝐚𝐟𝐞`;
+  𝐑𝐞𝐠𝐚𝐫𝐝𝐬,
+  𝐑𝐚𝐧𝐜𝐡𝐞𝐫𝐬 𝐂𝐚𝐟𝐞`;
   }
   if (OrderStatus === "confirmed" || OrderStatus === "processing") {
     message = `Hey  ${

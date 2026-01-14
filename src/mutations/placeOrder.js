@@ -89,11 +89,11 @@ async function
     // Calculate finalAmount based on fulfillment type
     let finalAmount;
     if (fulfillmentType === "shipping") {
-      if(shop?.deliveryCharges==null || shop?.deliveryCharges==undefined){
-         throw new ReactionError(
-      "payment-failed",
-      `Missing key deliveryCharges in shop Object`
-    );
+      if (shop?.deliveryCharges == null || shop?.deliveryCharges == undefined) {
+        throw new ReactionError(
+          "payment-failed",
+          `Missing key deliveryCharges in shop Object`
+        );
       }
       finalAmount = amount + parseInt(shop?.deliveryCharges); // Adding delivery fee of 50 for shipping
     } else {
@@ -240,7 +240,7 @@ export default async function placeOrder(context, input) {
     // Call the checkIfTime function
     const isOpen = await checkIfTime(startTime, endTime);
 
-    if (!isOpen) {
+    if (!isOpen && process.env.ENVIRONMENT == "production") {
       throw new ReactionError("access-denied", `${branchData.name} Branch is closed for now. Please try between ${branchData.Timing}`);
     }
   }
@@ -259,7 +259,7 @@ export default async function placeOrder(context, input) {
   ) {
     taxPercentage = taxData?.Card;
   }
-  if(fulfillmentGroups?.[0]?.paymentMethod === "EASYPAISA"){
+  if (fulfillmentGroups?.[0]?.paymentMethod === "EASYPAISA") {
     taxPercentage = taxData?.Card;
   }
 
@@ -375,7 +375,7 @@ export default async function placeOrder(context, input) {
       "Order amount must be greater than 500"
     );
   }
- 
+
   // Create anonymousAccessToken if no account ID
   const fullToken = accountId ? null : getAnonymousAccessToken();
 
@@ -482,51 +482,55 @@ export default async function placeOrder(context, input) {
   // Validate and save
 
   OrderSchema.validate(order);
-  const newOrder=await Orders.insertOne({
+  const newOrder = await Orders.insertOne({
     ...order,
     paymentMethod: fulfillmentGroups?.[0]?.paymentMethod || "CASH",
   });
 
-   let easyPaisaResponse;
+  let easyPaisaResponse;
   if (fulfillmentGroups[0].paymentMethod == "EASYPAISA") {
     // Process EasyPaisa payment non-blocking (fire and forget)
-    doEasyPaisaPayment(kitchenOrderID,orderId, null, payments[0].finalAmount-discountTotal, null, jazzCashNumber, email)
-      .then((response) => {
-        console.log("easyPaisaResponse ", response)
-        
-     
-      })
-      // .then((result) => {
-      //   console.log("TRANSACTION RECORD", result)
-      // })
-      .catch((error) => {
-        Logger.error("Error processing EasyPaisa payment or inserting transaction record:", error)
-      });
-         const transactionRecordObj = {
-          orderId,
-          kitchenOrderID,
-          accountId,
-          email,
-          responseCode: "NA",
-          responseMessage: "NA",
-          amount: payments[0].finalAmount-discountTotal,
-          status: "PENDING",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          transactionId: "NA",
-          transactionDateTime: "NA",
-          jazzCashNumber: jazzCashNumber
-        }
+    const transactionRecordObj = {
+      orderId,
+      kitchenOrderID,
+      accountId,
+      email,
+      responseCode: "NA",
+      responseMessage: "NA",
+      amount: payments[0].finalAmount - discountTotal,
+      status: "PENDING",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      transactionId: "NA",
+      transactionDateTime: "NA",
+      jazzCashNumber: jazzCashNumber
+    }
 
-         Transaction.insertOne(transactionRecordObj);
+    Transaction.insertOne(transactionRecordObj).then((result) => {
+      console.log("TRANSACTION RECORD in Place Order", result?.insertedId);
+
+      doEasyPaisaPayment(kitchenOrderID, orderId, null, payments[0].finalAmount - discountTotal, null, jazzCashNumber, email,result?.insertedId, Transaction, Orders)
+        .then((response) => {
+          console.log("easyPaisaResponse in place order", response)
+        })
+        .catch((error) => {
+          Logger.error("Error processing EasyPaisa payment or inserting transaction record:", error)
+        });
+    }).catch((error) => {
+      Logger.error("Error inserting transaction record:", error)
+    });
   }
+
+
 
 
   //Getting data for real time event (non-blocking)
   Orders.aggregate([
-    { $match: {
-      _id:newOrder.ops[0]?._id
-    } },
+    {
+      $match: {
+        _id: newOrder.ops[0]?._id
+      }
+    },
     { $sort: { createdAt: -1 } },
     {
       $lookup: {
@@ -754,8 +758,8 @@ export default async function placeOrder(context, input) {
     .catch((error) => {
       Logger.error("Error fetching order or publishing ORDER_CREATED event:", error);
     });
-  
-  await appEvents.emit("afterOrderCreate", {
+
+   appEvents.emit("afterOrderCreate", {
     createdBy: userId,
     order,
     orderId,
