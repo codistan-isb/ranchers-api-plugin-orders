@@ -3,6 +3,7 @@ import ReactionError from "@reactioncommerce/reaction-error";
 import Logger from "@reactioncommerce/logger";
 import doEasyPaisaPayment from "../util/easyPaisaPayment.js";
 import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
+import pubSub from "../util/pubSubIntance.js";
 
 const inputSchema = new SimpleSchema({
   orderId: String
@@ -23,21 +24,21 @@ export default async function reattemptEasyPaisaPayment(context, input) {
   const { Orders, Transaction } = collections;
 
   // First verify that this order actually exists
-    let decodedId;
-    try {
-      decodedId = decodeOpaqueId(orderId);
-    } catch (e) {
-      decodedId = null;
-    }
-    const lookupId = decodedId?.id || orderId;
-  
+  let decodedId;
+  try {
+    decodedId = decodeOpaqueId(orderId);
+  } catch (e) {
+    decodedId = null;
+  }
+  const lookupId = decodedId?.id || orderId;
+
   const order = await Orders.findOne({ _id: lookupId });
   if (!order) {
     throw new ReactionError("not-found", "Order not found");
   }
 
   // Check if the order is already paid
-  if (order.paymentStatus === "SUCCESS"|| order.isPaid) {
+  if (order.paymentStatus === "SUCCESS" || order.isPaid) {
     throw new ReactionError(
       "invalid-request",
       "This order has already been paid"
@@ -82,11 +83,11 @@ export default async function reattemptEasyPaisaPayment(context, input) {
   }
 
   // Check if there's already a pending transaction
-  const existingPendingTransaction = await Transaction.findOne({ 
-    orderId: lookupId, 
-    status: "PENDING" 
+  const existingPendingTransaction = await Transaction.findOne({
+    orderId: lookupId,
+    status: "PENDING"
   });
-  
+
   if (existingPendingTransaction) {
     throw new ReactionError(
       "invalid-request",
@@ -97,7 +98,7 @@ export default async function reattemptEasyPaisaPayment(context, input) {
   // Create transaction record with pending status before initiating payment
   const transactionRecordObj = {
     kitchenOrderID: order?.kitchenOrderID,
-    orderId:lookupId,
+    orderId: lookupId,
     accountId,
     email,
     responseCode: "NA",
@@ -108,26 +109,42 @@ export default async function reattemptEasyPaisaPayment(context, input) {
     updatedAt: new Date(),
     transactionId: "NA",
     transactionDateTime: "NA",
+    initiatedAt: new Date().toISOString(),
     jazzCashNumber: jazzCashNumber
   };
 
   const TransactionRecord = await Transaction.insertOne(transactionRecordObj);
 
+  // Update order payment status to pending
+  await Orders.updateOne(
+    { _id: lookupId },
+    { $set: { paymentStatus: "PENDING" ,isPaid: false} }
+  );
+
+  pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${orderId}`, {
+    orderPaymentStatusUpdated: {
+      orderId: orderId,
+      paymentStatus: "PENDING",
+      updatedAt: new Date(),
+      isPaid: false
+    }
+  });
+
   // Attempt EasyPaisa payment in non-blocking way
   doEasyPaisaPayment(
-     order?.kitchenOrderID,
-    lookupId,
+    order?.kitchenOrderID,
+    orderId,
     null,
     finalAmount,
     null,
     jazzCashNumber,
-    email,TransactionRecord?.insertedId,Transaction,Orders
+    email, TransactionRecord?.insertedId, Transaction, Orders
   ).then((easyPaisaResponse) => {
-        Logger.info(`EasyPaisa payment reattempt for order ${lookupId}: ${easyPaisaResponse?.responseMessage}`);
+    Logger.info(`EasyPaisa payment reattempt for order ${lookupId}: ${easyPaisaResponse?.responseMessage}`);
   }).catch((error) => {
     Logger.error("Error reattempting EasyPaisa payment:", error);
   });
-    
+
   // Return immediately without waiting for payment to complete
   return {
     message: "Payment requested, open your easy paisa app to complete the payment.",

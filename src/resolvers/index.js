@@ -24,6 +24,12 @@ export default {
   OrderItem,
   Query,
   Refund,
+  OrderPaymentStatusUpdate: {
+    orderId: (obj) => obj.orderId,
+    paymentStatus: (obj) => obj.paymentStatus,
+    updatedAt: (obj) => obj.updatedAt,
+    isPaid: (obj) => obj.isPaid
+  },
   Subscription: {
     newOrder: {
       subscribe: (_, { branchID }) => {
@@ -44,6 +50,13 @@ export default {
         
         // If no branchID, return all order events
         return pubSub.asyncIterator(["ORDER_CREATED"]);
+      },
+    },
+    orderPaymentStatusUpdated: {
+      subscribe: (_, { orderId }) => {
+        // Subscribe to payment status updates for the specific order
+        const eventName = `ORDER_PAYMENT_STATUS_UPDATED_${orderId}`;
+        return pubSub.asyncIterator([eventName]);
       },
     },
   },

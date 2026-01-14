@@ -486,7 +486,7 @@ export default async function placeOrder(context, input) {
     ...order,
     paymentMethod: fulfillmentGroups?.[0]?.paymentMethod || "CASH",
   });
-
+  const opaqueOrderId = encodeOpaqueId("reaction/order",newOrder.insertedId);
   let easyPaisaResponse;
   if (fulfillmentGroups[0].paymentMethod == "EASYPAISA") {
     // Process EasyPaisa payment non-blocking (fire and forget)
@@ -509,7 +509,7 @@ export default async function placeOrder(context, input) {
     Transaction.insertOne(transactionRecordObj).then((result) => {
       console.log("TRANSACTION RECORD in Place Order", result?.insertedId);
 
-      doEasyPaisaPayment(kitchenOrderID, orderId, null, payments[0].finalAmount - discountTotal, null, jazzCashNumber, email,result?.insertedId, Transaction, Orders)
+      doEasyPaisaPayment(kitchenOrderID, opaqueOrderId, null, payments[0].finalAmount - discountTotal, null, jazzCashNumber, email,result?.insertedId, Transaction, Orders)
         .then((response) => {
           console.log("easyPaisaResponse in place order", response)
         })

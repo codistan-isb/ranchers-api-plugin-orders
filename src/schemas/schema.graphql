@@ -1347,6 +1347,28 @@ input OrderFilterInput {
   "The order's status to filter by"
   status: OrderStatusValue
 }
+
+"Payload for order payment status updates subscription"
+type OrderPaymentStatusUpdate {
+  "The order ID"
+  orderId: ID!
+  
+  "The payment status of the order (PENDING, SUCCESS, FAILED, etc.)"
+  paymentStatus: String!
+  
+  "Timestamp of the status update"
+  updatedAt: DateTime!
+  
+  "Full order object with updated payment status"
+  isPaid: Boolean!
+}
+
 type Subscription {
   newOrder(branchID: ID): OrderNew
+  
+  "Subscribe to order payment status updates"
+  orderPaymentStatusUpdated(
+    "The order ID to subscribe to payment status updates for"
+    orderId: ID!
+  ): OrderPaymentStatusUpdate
 }

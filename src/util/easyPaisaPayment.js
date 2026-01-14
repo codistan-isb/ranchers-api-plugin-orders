@@ -3,6 +3,8 @@ import axios from "axios";
 import ReactionError from "@reactioncommerce/reaction-error";
 import pkg from "mongodb";
 const { ObjectId } = pkg;
+import pubSub from "../util/pubSubIntance.js";
+import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
 
 export default async function doEasyPaisaPayment(
   kitchenOrderID,
@@ -48,7 +50,7 @@ export default async function doEasyPaisaPayment(
     },
     data: data
   };
-
+  
   const response = await axios.request(config)
     .then(async (response) => {
       console.log("response of easypaisa", JSON.stringify(response.data));
@@ -56,15 +58,24 @@ export default async function doEasyPaisaPayment(
       // Update transaction in database
       if (response.data && TransactionDb) {
         try {
-          const { optional1,responseDesc,responseCode,transactionId,transactionDateTime,optional2 } = response.data; // Assuming optional1 contains the orderId
+          const { optional1, responseDesc, responseCode, transactionId, transactionDateTime, optional2 } = response.data; // Assuming optional1 contains the orderId
+      
+        // First verify that this order actually exists
+        let decodedId;
+        try {
+          decodedId = decodeOpaqueId(optional1);
+        } catch (e) {
+          decodedId = null;
+        }
+        const lookupId = decodedId?.id || orderId;
           await TransactionDb.updateOne(
-            { orderId: optional1 , _id:ObjectId(optional2) },
+            { orderId: lookupId, _id: ObjectId(optional2) },
             {
               $set: {
-                raw:response.data,
+                raw: response.data,
                 responseMessage: responseDesc,
                 status: responseDesc,
-                responseCode:responseCode,
+                responseCode: responseCode,
                 transactionId: transactionId,
                 updatedAt: new Date(),
                 transactionDateTime: transactionDateTime
@@ -74,7 +85,7 @@ export default async function doEasyPaisaPayment(
           const isSuccess = responseDesc === "SUCCESS" && responseCode === "0000";
           try {
             await OrdersDb.updateOne(
-              { _id: optional1 },
+              { _id: lookupId },
               {
                 $set: {
                   isPaid: isSuccess,
@@ -84,7 +95,15 @@ export default async function doEasyPaisaPayment(
                 },
               }
             );
-            console.log(`Order ${optional1} updated from EasyPaisa response with status ${responseDesc}`);
+            pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${optional1}`, {
+              orderPaymentStatusUpdated: {
+                orderId: optional1,
+                paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
+                updatedAt: new Date(),
+                isPaid: isSuccess,
+              }
+            });
+            console.log(`Order ${lookupId} updated from EasyPaisa response with status ${responseDesc}`);
           } catch (orderUpdateError) {
             console.error("Error updating order from EasyPaisa response:", orderUpdateError.message);
           }

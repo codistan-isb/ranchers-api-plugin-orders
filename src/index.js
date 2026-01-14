@@ -14,6 +14,8 @@ import schemas from "./schemas/index.js";
 import { Order, OrderFulfillmentGroup, OrderItem } from "./simpleSchemas.js";
 import startup from "./startup.js";
 import getDataForOrderEmail from "./util/getDataForOrderEmail.js";
+import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
+
 
 /**
  * @summary Import and call this function to add this plugin to your API.
@@ -169,12 +171,20 @@ function IPNPayment(context) {
         const transactionStatus = (transactionData?.transaction_status || "").toUpperCase();
         const responseCode = transactionData?.response_code;
 
+  // First verify that this order actually exists
+  let decodedId;
+  try {
+    decodedId = decodeOpaqueId(orderIdFromTxn);
+  } catch (e) {
+    decodedId = null;
+  }
+  const lookupId = decodedId?.id || orderId;
         if (orderIdFromTxn) {
           const isSuccess = transactionStatus === "PAID" && responseCode === "0000";
           try {
             await Orders.updateOne(
               { 
-                _id: orderIdFromTxn,
+                _id: lookupId,
                 isPaid: { $ne: true }  // Only update if not already paid
               },
               {
@@ -186,7 +196,16 @@ function IPNPayment(context) {
                 },
               }
             );
-            console.log(`Order ${orderIdFromTxn} updated from EasyPaisa webhook with status ${transactionStatus}`);
+               pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${orderIdFromTxn}`, {
+              orderPaymentStatusUpdated: {
+                orderId: orderIdFromTxn,
+                  paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
+                updatedAt: new Date(),
+                                  isPaid: isSuccess
+
+              }
+            });
+            console.log(`Order ${lookupId} updated from EasyPaisa webhook with status ${transactionStatus}`);
           } catch (orderUpdateError) {
             console.error("Error updating order from EasyPaisa webhook:", orderUpdateError.message);
           }
@@ -195,7 +214,7 @@ function IPNPayment(context) {
           try {
             await Transaction.updateOne(
               {
-                orderId: orderIdFromTxn,
+                orderId: lookupId,
                 _id:ObjectId(transactionRecord)
               },
               {
