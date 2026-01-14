@@ -162,9 +162,10 @@ function IPNPayment(context) {
         // }
 
         // Update order based on transaction data
-        const orderIdFromTxn = transactionData?.order_id || transactionData?.optional1;
-        const kitchenOrderID = transactionData?.order_id || transactionData?.orderId;
-        const transactionIdFromTxn = transactionData?.transaction_id || transactionData?.transactionId;
+        const orderIdFromTxn =  transactionData?.optional1;
+        const transactionRecord = transactionData?.optional2;
+        const kitchenOrderID = transactionData?.order_id ;
+        const transactionIdFromTxn = transactionData?.transaction_id ;
         const transactionStatus = (transactionData?.transaction_status || "").toUpperCase();
         const responseCode = transactionData?.response_code;
 
@@ -172,7 +173,11 @@ function IPNPayment(context) {
           const isSuccess = transactionStatus === "PAID" && responseCode === "0000";
           try {
             await Orders.updateOne(
-              { _id: orderIdFromTxn },
+              { 
+                _id: orderIdFromTxn,
+                _id: ObjectId(transactionRecord),
+                isPaid: { $ne: true }  // Only update if not already paid
+              },
               {
                 $set: {
                   isPaid: isSuccess,
@@ -192,7 +197,7 @@ function IPNPayment(context) {
             await Transaction.updateOne(
               {
                 orderId: orderIdFromTxn,
-                kitchenOrderID: kitchenOrderID
+                _id:ObjectId(transactionRecord)
               },
               {
                 $set: {
