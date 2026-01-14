@@ -36,6 +36,13 @@ export default async function reattemptEasyPaisaPayment(context, input) {
     throw new ReactionError("not-found", "Order not found");
   }
 
+  // Check if the order is already paid
+  if (order.paymentStatus === "SUCCESS"|| order.isPaid) {
+    throw new ReactionError(
+      "invalid-request",
+      "This order has already been paid"
+    );
+  }
 
   // Check if the order payment method is EasyPaisa
   const paymentMethod = order.paymentMethod || order.fulfillmentGroups?.[0]?.paymentMethod;
@@ -91,7 +98,7 @@ export default async function reattemptEasyPaisaPayment(context, input) {
     jazzCashNumber: jazzCashNumber
   };
 
-  await Transaction.insertOne(transactionRecordObj);
+  const TransactionRecord = await Transaction.insertOne(transactionRecordObj);
 
   // Attempt EasyPaisa payment in non-blocking way
   doEasyPaisaPayment(
@@ -101,40 +108,11 @@ export default async function reattemptEasyPaisaPayment(context, input) {
     finalAmount,
     null,
     jazzCashNumber,
-    email
+    email,TransactionRecord?.insertedId,Transaction,Orders
   ).then((easyPaisaResponse) => {
-    // Update transaction record with EasyPaisa response
-    console.log("EasyPaisa Response:", easyPaisaResponse);
-    // console.log("Lookup ID:", lookupId);
-    // Transaction.updateOne(
-    //   { orderId: easyPaisaResponse.orderId, status: "PENDING" },
-    //   {
-    //     $set: {
-    //       responseCode: easyPaisaResponse?.responseCode || "NA",
-    //       responseMessage: easyPaisaResponse?.responseMessage || "Payment response received",
-    //       transactionId: easyPaisaResponse?.transactionId || "NA",
-    //       transactionDateTime: easyPaisaResponse?.transactionDateTime || new Date().toISOString(),
-    //       status: easyPaisaResponse?.responseCode === "0000" ? "SUCCESS" : "FAILED",
-    //       updatedAt: new Date(),
-    //     },
-    //   }
-    // );
-
-    Logger.info(`EasyPaisa payment reattempt for order ${lookupId}: ${easyPaisaResponse?.responseMessage}`);
+        Logger.info(`EasyPaisa payment reattempt for order ${lookupId}: ${easyPaisaResponse?.responseMessage}`);
   }).catch((error) => {
     Logger.error("Error reattempting EasyPaisa payment:", error);
-    
-    // Update transaction record with error
-    // Transaction.updateOne(
-    //   { orderId: lookupId, status: "PENDING" },
-    //   {
-    //     $set: {
-    //       status: "FAILED",
-    //       responseMessage: error.message || "Payment failed due to an error",
-    //       updatedAt: new Date(),
-    //     },
-    //   }
-    // );
   });
     
   // Return immediately without waiting for payment to complete

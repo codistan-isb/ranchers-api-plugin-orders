@@ -83,7 +83,7 @@ function IPNPayment(context) {
       }
     });
 
-    // Webhook endpoint for receiving EasyPaisa events (GET request with URL parameter)
+    // Webhook endpoint for receiving EasyPaisa events (POST request with URL parameter)
     app.expressApp.post("/webhook/easypaisa", async (req, res) => {
       try {
         console.log("EasyPaisa webhook received with query params:", req.query);
@@ -142,24 +142,24 @@ function IPNPayment(context) {
         }
 
         // Forward to Finnect with statusUrl as query param
-        try {
-          const forwardResponse = await axios.post(
-            "https://api.finnect.com.pk/ipn/easypaisa",
-            {},
-            {
-              params: { url: statusUrl },
-              headers: {
-                "Content-Type": "application/json",
-              },
-              timeout: 10000,
-              httpsAgent: finnectHttpsAgent,
-            }
-          );
-          console.log("Forwarded to Finnect successfully:", forwardResponse.data);
-        } catch (forwardError) {
-          console.error("Error forwarding to Finnect:", forwardError.message);
-          // continue processing even if forward fails
-        }
+        // try {
+        //   const forwardResponse = await axios.post(
+        //     "https://api.finnect.com.pk/ipn/easypaisa",
+        //     {},
+        //     {
+        //       params: { url: statusUrl },
+        //       headers: {
+        //         "Content-Type": "application/json",
+        //       },
+        //       timeout: 10000,
+        //       httpsAgent: finnectHttpsAgent,
+        //     }
+        //   );
+        //   console.log("Forwarded to Finnect successfully:", forwardResponse.data);
+        // } catch (forwardError) {
+        //   console.error("Error forwarding to Finnect:", forwardError.message);
+        //   // continue processing even if forward fails
+        // }
 
         // Update order based on transaction data
         const orderIdFromTxn = transactionData?.order_id || transactionData?.optional1;
@@ -200,6 +200,7 @@ function IPNPayment(context) {
                   paidAmount: transactionData?.transaction_amount,
                   responseMessage: `Transaction description: ${transactionData?.description}`,
                   raw: transactionData,
+                  statusUrl: statusUrl,
                   updatedAt: new Date(),
                   responseCode: responseCode,
                   status: transactionStatus,
@@ -232,102 +233,6 @@ function IPNPayment(context) {
       }
     });
 
-    // // Webhook endpoint for receiving events (POST)
-    // app.expressApp.post("/webhook/easypaisa", async (req, res) => {
-    //   try {
-    //     console.log("Webhook event received:", req.body);
-
-    //     const { collections } = context;
-    //     const { Orders, Transaction } = collections;
-    //     const payload = req.body;
-
-    //     // Log webhook payload for debugging
-    //     console.log("Webhook payload:", JSON.stringify(payload, null, 2));
-
-    //     // // Forward the webhook to the external API
-    //     // try {
-    //     //   const forwardResponse = await axios.post(
-    //     //     "https://api.finnect.com.pk/ipn/easypaisa",
-    //     //     payload,
-    //     //     {
-    //     //       headers: {
-    //     //         "Content-Type": "application/json",
-    //     //       },
-    //     //       timeout: 10000, // 10 second timeout
-    //     //     }
-    //     //   );
-    //     //   console.log("Webhook forwarded successfully:", forwardResponse.data);
-    //     // } catch (forwardError) {
-    //     //   console.error("Error forwarding webhook to external API:", forwardError.message);
-    //     //   // Continue processing even if forwarding fails
-    //     // }
-
-    //     // Process webhook based on event type
-    //     // const eventType = payload.eventType || payload.event_type || payload.type;
-
-    //     // switch (eventType) {
-    //     //   case "payment.success":
-    //     //   case "transaction.completed":
-    //     //     // Handle successful payment webhook
-    //     //     if (payload.orderId || payload.order_id) {
-    //     //       const orderId = payload.orderId || payload.order_id;
-    //     //       const transactionId = payload.transactionId || payload.transaction_id;
-
-    //     //       await Orders.updateOne(
-    //     //         { _id: orderId },
-    //     //         {
-    //     //           $set: {
-    //     //             isPaid: true,
-    //     //             paymentStatus: "SUCCESS",
-    //     //             transactionId: transactionId,
-    //     //             updatedAt: new Date(),
-    //     //           },
-    //     //         }
-    //     //       );
-
-    //     //       console.log(`Order ${orderId} marked as paid via webhook`);
-    //     //     }
-    //     //     break;
-
-    //     //   case "payment.failed":
-    //     //   case "transaction.failed":
-    //     //     // Handle failed payment webhook
-    //     //     if (payload.orderId || payload.order_id) {
-    //     //       const orderId = payload.orderId || payload.order_id;
-
-    //     //       await Orders.updateOne(
-    //     //         { _id: orderId },
-    //     //         {
-    //     //           $set: {
-    //     //             paymentStatus: "FAILED",
-    //     //             updatedAt: new Date(),
-    //     //           },
-    //     //         }
-    //     //       );
-
-    //     //       console.log(`Order ${orderId} marked as payment failed via webhook`);
-    //     //     }
-    //     //     break;
-
-    //     //   default:
-    //     //     console.log(`Unhandled webhook event type: ${eventType}`);
-    //     // }
-
-    //     // Send acknowledgment response
-    //     return res.status(200).json({
-    //       success: true,
-    //       message: "Webhook received successfully",
-    //       // eventType: eventType,
-    //     });
-    //   } catch (error) {
-    //     console.error("Error processing webhook:", error);
-    //     return res.status(500).json({
-    //       success: false,
-    //       message: "Error processing webhook",
-    //       error: error.message,
-    //     });
-    //   }
-    // });
   }
 }
 export default async function register(app) {
