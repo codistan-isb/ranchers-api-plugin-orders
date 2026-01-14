@@ -80,7 +80,7 @@ export default async function doEasyPaisaPayment(
                   isPaid: isSuccess,
                   paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
                   transactionId: transactionId || null,
-                  updatedAt: transactionDateTime || new Date(),
+                  updatedAt: new Date(),
                 },
               }
             );

@@ -89,6 +89,8 @@ export default async function convertOrderToCash(context, input) {
         $set: {
             paymentMethod: "CASH",
             updatedAt: new Date(),
+            isConvertedToCash: true,
+            updatedBy: userId || "user",
             "payments.0.method": "CASH",
             "payments.0.tax": newTax,
             "payments.0.finalAmount": newFinalAmount,

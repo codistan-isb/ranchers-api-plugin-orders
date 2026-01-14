@@ -175,7 +175,6 @@ function IPNPayment(context) {
             await Orders.updateOne(
               { 
                 _id: orderIdFromTxn,
-                _id: ObjectId(transactionRecord),
                 isPaid: { $ne: true }  // Only update if not already paid
               },
               {
