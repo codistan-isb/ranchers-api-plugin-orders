@@ -81,6 +81,19 @@ export default async function reattemptEasyPaisaPayment(context, input) {
     );
   }
 
+  // Check if there's already a pending transaction
+  const existingPendingTransaction = await Transaction.findOne({ 
+    orderId: lookupId, 
+    status: "PENDING" 
+  });
+  
+  if (existingPendingTransaction) {
+    throw new ReactionError(
+      "invalid-request",
+      "A payment transaction is already in progress for this order. Please complete the existing payment request."
+    );
+  }
+
   // Create transaction record with pending status before initiating payment
   const transactionRecordObj = {
     kitchenOrderID: order?.kitchenOrderID,
