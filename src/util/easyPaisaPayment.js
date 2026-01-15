@@ -66,7 +66,6 @@ export default async function doEasyPaisaPayment(
   pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${orderId}`, {
     orderPaymentStatusUpdated: {
       orderId: orderId,
-      paymentMethod: "EASYPASA",
       paymentStatus: "PENDING",
       updatedAt: new Date(),
       isPaid: false,
