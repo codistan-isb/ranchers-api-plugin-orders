@@ -1354,6 +1354,14 @@ export const Order = new SimpleSchema({
     type: String,
     optional: true,
   },
+  isConvertedToCash:{
+    type: Boolean,
+    optional: true,
+  },
+  updatedBy:{
+    type: String,
+    optional: true,
+  },
   accountId: {
     type: String,
     optional: true,

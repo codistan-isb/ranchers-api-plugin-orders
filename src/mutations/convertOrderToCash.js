@@ -115,7 +115,6 @@ export default async function convertOrderToCash(context, input) {
             { returnDocument: "after" }
         );
 
-
         return {
             clientMutationId,
             order: formatPublicOrderResponse(updatedOrder),
