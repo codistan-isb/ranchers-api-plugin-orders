@@ -143,25 +143,7 @@ function IPNPayment(context) {
           });
         }
 
-        // Forward to Finnect with statusUrl as query param
-        // try {
-        //   const forwardResponse = await axios.post(
-        //     "https://api.finnect.com.pk/ipn/easypaisa",
-        //     {},
-        //     {
-        //       params: { url: statusUrl },
-        //       headers: {
-        //         "Content-Type": "application/json",
-        //       },
-        //       timeout: 10000,
-        //       httpsAgent: finnectHttpsAgent,
-        //     }
-        //   );
-        //   console.log("Forwarded to Finnect successfully:", forwardResponse.data);
-        // } catch (forwardError) {
-        //   console.error("Error forwarding to Finnect:", forwardError.message);
-        //   // continue processing even if forward fails
-        // }
+       
 
         // Update order based on transaction data
         const orderIdFromTxn =  transactionData?.optional1;
@@ -239,7 +221,43 @@ function IPNPayment(context) {
           console.warn("EasyPaisa webhook missing order_id; skipping order update");
         }
 
+ // Forward to Finnect with statusUrl as query param
+        void axios.post(
+          "https://api.finnect.com.pk/ipn/easypaisa",
+          {},
+          {
+            params: { url: statusUrl },
+            headers: {
+              "Content-Type": "application/json",
+            },
+            timeout: 10000,
+            httpsAgent: finnectHttpsAgent,
+          }
+        ).then((forwardResponse) => {
+          console.log("Forwarded to Finnect successfully:", forwardResponse.data);
+        }).catch((forwardError) => {
+          console.error("Error forwarding to Finnect:", forwardError.message);
+          // continue processing even if forward fails
+        });
 
+        // In production also forward to Ranchers staging webhook for monitoring
+        if ((process.env.NODE_ENV || "").toLowerCase() === "production") {
+          void axios.post(
+            "https://api.staging.rancherscafe.com/webhook/easypaisa",
+            {},
+            {
+              params: { url: statusUrl },
+              headers: {
+                "Content-Type": "application/json",
+              },
+              timeout: 10000,
+              httpsAgent: finnectHttpsAgent,
+            }
+          ).catch((ranchersForwardError) => {
+            console.error("Error forwarding to Ranchers staging webhook:", ranchersForwardError.message);
+            // continue processing even if forward fails
+          });
+        }
         // Send acknowledgment response
         return res.status(200).json({
           success: true,
