@@ -1280,6 +1280,8 @@ type PublicOrderInfoPayload {
   paymentStatus: String
   "Transaction ID"
   transactionId: String
+  "Payment request time for counter"
+  paymentInitiatedAt:String
 }
 
 "Response payload for the updateOrder mutation"
@@ -1361,6 +1363,9 @@ type OrderPaymentStatusUpdate {
   
   "Full order object with updated payment status"
   isPaid: Boolean!
+
+  "paymentInitiatedAt"
+  paymentInitiatedAt:String
 }
 
 type Subscription {

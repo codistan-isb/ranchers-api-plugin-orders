@@ -115,21 +115,7 @@ export default async function reattemptEasyPaisaPayment(context, input) {
 
   const TransactionRecord = await Transaction.insertOne(transactionRecordObj);
 
-  // Update order payment status to pending
-  await Orders.updateOne(
-    { _id: lookupId },
-    { $set: { paymentStatus: "PENDING" ,isPaid: false} }
-  );
-
-  pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${orderId}`, {
-    orderPaymentStatusUpdated: {
-      orderId: orderId,
-      paymentStatus: "PENDING",
-      updatedAt: new Date(),
-      isPaid: false
-    }
-  });
-
+ 
   // Attempt EasyPaisa payment in non-blocking way
   doEasyPaisaPayment(
     order?.kitchenOrderID,
@@ -144,6 +130,9 @@ export default async function reattemptEasyPaisaPayment(context, input) {
   }).catch((error) => {
     Logger.error("Error reattempting EasyPaisa payment:", error);
   });
+ // Update order payment status to pending
+
+
 
   // Return immediately without waiting for payment to complete
   return {

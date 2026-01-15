@@ -50,13 +50,14 @@ export default function formatPublicOrderResponse(order) {
   );
 
   return {
+    paymentInitiatedAt:order?.paymentInitiatedAt,
     payments,
     kitchenOrderID: order.kitchenOrderID || null,
     updatedAt: order.updatedAt || null,
     notes: order.notes || [],
     email: order.email || null,
     customerInfo: order.shipping?.[0]?.address || null,
-    fulfillmentGroups: order.fulfillmentGroups || [],
+    fulfillmentGroups:  order.shipping || [],
     summary: order.summary || null,
     paymentOption,
     finalPrice,

@@ -50,7 +50,28 @@ export default async function doEasyPaisaPayment(
     },
     data: data
   };
+    let decodedId;
+    try {
+      decodedId = decodeOpaqueId(orderId);
+    } catch (e) {
+      decodedId = null;
+    }
+    const lookupId = decodedId?.id || orderId;
+    const paymentInitiatedAt=new Date().toISOString()
+    await OrdersDb.updateOne(
+    { _id: lookupId },
+    { $set: { paymentStatus: "PENDING" ,isPaid: false, paymentInitiatedAt:paymentInitiatedAt } }
+  );
   
+  pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${orderId}`, {
+    orderPaymentStatusUpdated: {
+      orderId: orderId,
+      paymentStatus: "PENDING",
+      updatedAt: new Date(),
+      isPaid: false,
+      paymentInitiatedAt:paymentInitiatedAt
+    }
+  });
   const response = await axios.request(config)
     .then(async (response) => {
       console.log("response of easypaisa", JSON.stringify(response.data));

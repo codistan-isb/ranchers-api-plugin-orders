@@ -9,6 +9,8 @@ import buildOrderFulfillmentGroupFromInput from "../util/buildOrderFulfillmentGr
 import verifyPaymentsMatchOrderTotal from "../util/verifyPaymentsMatchOrderTotal.js";
 import doEasyPaisaPayment from "../util/easyPaisaPayment.js";
 import sendOrderEmail from "../util/sendOrderEmail.js";
+import encodeOpaqueId from "@reactioncommerce/api-utils/encodeOpaqueId.js";
+
 import {
   Order as OrderSchema,
   orderInputSchema,
