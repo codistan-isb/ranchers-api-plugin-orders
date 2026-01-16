@@ -41,6 +41,12 @@ export default async function convertOrderToCash(context, input) {
         throw new ReactionError("not-found", "Order not found");
     }
 
+    // Check if payment status is pending
+    const paymentStatus = (order.paymentStatus || order.payments?.[0]?.status || "").toString().toUpperCase();
+    if (paymentStatus === "PENDING") {
+        throw new ReactionError("invalid-param", "Cannot convert order with pending payment status");
+    }
+
     // Check if order is already cash payment
     const currentPaymentMethod = (order.paymentMethod || order.payments?.[0]?.method || "").toString().toUpperCase();
     if (currentPaymentMethod === "CASH" || currentPaymentMethod === "COD") {

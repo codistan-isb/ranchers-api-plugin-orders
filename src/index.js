@@ -143,29 +143,29 @@ function IPNPayment(context) {
           });
         }
 
-       
+
 
         // Update order based on transaction data
-        const orderIdFromTxn =  transactionData?.optional1;
+        const orderIdFromTxn = transactionData?.optional1;
         const transactionRecord = transactionData?.optional2;
-        const kitchenOrderID = transactionData?.order_id ;
-        const transactionIdFromTxn = transactionData?.transaction_id ;
+        const kitchenOrderID = transactionData?.order_id;
+        const transactionIdFromTxn = transactionData?.transaction_id;
         const transactionStatus = (transactionData?.transaction_status || "").toUpperCase();
         const responseCode = transactionData?.response_code;
 
-  // First verify that this order actually exists
-  let decodedId;
-  try {
-    decodedId = decodeOpaqueId(orderIdFromTxn);
-  } catch (e) {
-    decodedId = null;
-  }
-  const lookupId = decodedId?.id || orderId;
+        // First verify that this order actually exists
+        let decodedId;
+        try {
+          decodedId = decodeOpaqueId(orderIdFromTxn);
+        } catch (e) {
+          decodedId = null;
+        }
+        const lookupId = decodedId?.id || orderId;
         if (orderIdFromTxn) {
           const isSuccess = transactionStatus === "PAID" && responseCode === "0000";
           try {
-            await Orders.updateOne(
-              { 
+            const orderObj = await Orders.findOneAndUpdate(
+              {
                 _id: lookupId,
                 isPaid: { $ne: true }  // Only update if not already paid
               },
@@ -176,14 +176,29 @@ function IPNPayment(context) {
                   transactionId: transactionIdFromTxn || null,
                   updatedAt: new Date(),
                 },
-              }
+              },
+              { new: true }
+
             );
-               pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${orderIdFromTxn}`, {
+
+            const bId = orderObj?.value?.branchID;
+            if (bId) {
+              console.log("Publishing to branch-specific channel:", `ORDER_PAYMENT_STATUS_UPDATED_${bId}`);
+              pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${bId}`, {
+                orderPaymentStatusUpdated: {
+                  orderId: lookupId,
+                  paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
+                  updatedAt: new Date(),
+                  isPaid: isSuccess
+                }
+              });
+            }
+            pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${orderIdFromTxn}`, {
               orderPaymentStatusUpdated: {
                 orderId: orderIdFromTxn,
-                  paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
+                paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
                 updatedAt: new Date(),
-                                  isPaid: isSuccess
+                isPaid: isSuccess
 
               }
             });
@@ -197,7 +212,7 @@ function IPNPayment(context) {
             await Transaction.updateOne(
               {
                 orderId: lookupId,
-                _id:ObjectId(transactionRecord)
+                _id: ObjectId(transactionRecord)
               },
               {
                 $set: {
@@ -221,7 +236,7 @@ function IPNPayment(context) {
           console.warn("EasyPaisa webhook missing order_id; skipping order update");
         }
 
- // Forward to Finnect with statusUrl as query param
+        // Forward to Finnect with statusUrl as query param
         void axios.post(
           "https://api.finnect.com.pk/ipn/easypaisa",
           {},

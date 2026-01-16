@@ -58,12 +58,28 @@ export default async function doEasyPaisaPayment(
     }
     const lookupId = decodedId?.id || orderId;
     const paymentInitiatedAt=new Date().toISOString()
-    await OrdersDb.updateOne(
+   const orderData= await OrdersDb.findOneAndUpdate(
     { _id: lookupId },
-    { $set: { paymentStatus: "PENDING" ,isPaid: false, paymentInitiatedAt:paymentInitiatedAt } }
+    { $set: { paymentStatus: "PENDING" ,isPaid: false, paymentInitiatedAt:paymentInitiatedAt } },
+     { new: true } 
   );
-  
-  pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${orderId}`, {
+  const branchId=orderData?.value?.branchID;
+  console.log("branch iD ",branchId);
+  if(branchId)
+    {
+              console.log("Publishing to branch-specific channel:", `ORDER_PAYMENT_STATUS_UPDATED_${branchId}`);
+
+  pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${branchId}`, {
+    orderPaymentStatusUpdated: {
+      orderId: lookupId,
+      paymentStatus: "PENDING",
+      updatedAt: new Date(),
+      isPaid: false,
+      paymentInitiatedAt:paymentInitiatedAt
+    }
+  });
+}
+   pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${orderId}`, {
     orderPaymentStatusUpdated: {
       orderId: orderId,
       paymentStatus: "PENDING",
@@ -105,7 +121,7 @@ export default async function doEasyPaisaPayment(
           );
           const isSuccess = responseDesc === "SUCCESS" && responseCode === "0000";
           try {
-            await OrdersDb.updateOne(
+           const orderObj = await OrdersDb.findOneAndUpdate(
               { _id: lookupId },
               {
                 $set: {
@@ -114,8 +130,24 @@ export default async function doEasyPaisaPayment(
                   transactionId: transactionId || null,
                   updatedAt: new Date(),
                 },
-              }
+              },
+     { new: true } 
+
             );
+            const bId=orderObj?.value?.branchID;
+            if(bId)
+            {
+              console.log("Publishing to branch-specific channel:", `ORDER_PAYMENT_STATUS_UPDATED_${bId}`);
+
+            pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${bId}`, {
+              orderPaymentStatusUpdated: {
+                orderId: lookupId,
+                paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
+                updatedAt: new Date(),
+                isPaid: isSuccess,
+              }
+            });
+          }
             pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${optional1}`, {
               orderPaymentStatusUpdated: {
                 orderId: optional1,
