@@ -418,7 +418,7 @@ export default async function placeOrder(context, input) {
     isPaid: false,
     transactionId: "null",
     msisdn: jazzCashNumber || null,
-    paymentStatus: "PENDING",
+    paymentStatus: "NA",
   };
 
 

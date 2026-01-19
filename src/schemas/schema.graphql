@@ -1366,6 +1366,12 @@ type OrderPaymentStatusUpdate {
 
   "paymentInitiatedAt"
   paymentInitiatedAt:String
+
+  "payment Method"
+  paymentMethod:String
+
+"Payments"
+  payments:[Payment]
 }
 
 type Subscription {

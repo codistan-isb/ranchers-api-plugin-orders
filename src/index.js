@@ -182,6 +182,7 @@ function IPNPayment(context) {
             );
 
             const bId = orderObj?.value?.branchID;
+            const paymentMethod = orderObj?.value?.paymentMethod ;
             if (bId) {
               console.log("Publishing to branch-specific channel:", `ORDER_PAYMENT_STATUS_UPDATED_${bId}`);
               pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${bId}`, {
@@ -189,6 +190,7 @@ function IPNPayment(context) {
                   orderId: lookupId,
                   paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
                   updatedAt: new Date(),
+                  paymentMethod:paymentMethod,
                   isPaid: isSuccess
                 }
               });
@@ -197,6 +199,7 @@ function IPNPayment(context) {
               orderPaymentStatusUpdated: {
                 orderId: orderIdFromTxn,
                 paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
+                  paymentMethod:paymentMethod,
                 updatedAt: new Date(),
                 isPaid: isSuccess
 

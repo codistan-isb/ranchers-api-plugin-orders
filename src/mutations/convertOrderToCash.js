@@ -4,6 +4,7 @@ import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
 import pkg from "mongodb";
 const { ObjectId } = pkg;
 import { Order as OrderSchema } from "../simpleSchemas.js";
+import pubSub from "../util/pubSubIntance.js";
 import formatPublicOrderResponse from "../util/formatPublicOrderResponse.js";
 
 const inputSchema = new SimpleSchema({
@@ -88,7 +89,7 @@ export default async function convertOrderToCash(context, input) {
 
     // Calculate new final amount
     const shippingCharges = Number(invoice.shipping || 0);
-    const newFinalAmount = totalAmount + newTax + shippingCharges;
+    let newFinalAmount = totalAmount + newTax + shippingCharges;
 
     // Prepare update modifier
     const modifier = {
@@ -109,18 +110,36 @@ export default async function convertOrderToCash(context, input) {
     // Update invoice if it exists
     if (firstShipping.invoice) {
         modifier.$set["shipping.0.invoice.taxes"] = newTax;
-        modifier.$set["shipping.0.invoice.total"] = totalAmount + newTax + shippingCharges - (invoice.discounts || 0);
+        modifier.$set["shipping.0.invoice.total"] = newFinalAmount;
     }
 
     // Perform the update
     OrderSchema.validate(modifier, { modifier: true });
     try {
-        const { value: updatedOrder } = await Orders.findOneAndUpdate(
+       await Orders.findOneAndUpdate(
             { _id: lookupId },
             modifier,
-            { returnDocument: "after" }
+              { new: true }
         );
+        const updatedOrder = await Orders.findOne({ _id: lookupId });
+        const bId = updatedOrder?.branchID;
+ if (bId) {
+              console.log("Publishing to branch-specific channel:", `ORDER_PAYMENT_STATUS_UPDATED_${bId}`);
 
+              pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${bId}`, {
+                orderPaymentStatusUpdated: {
+                  orderId: lookupId,
+                  paymentStatus:"FAILED",
+                  updatedAt: new Date(),
+                  isPaid: false,
+                  paymentMethod: "CASH",
+                  payments: updatedOrder?.payments?.map(({ address, ...payment }) => ({
+                    ...payment,
+                    billingAddress: address
+                  }))
+                }
+              });
+            }
         return {
             clientMutationId,
             order: formatPublicOrderResponse(updatedOrder),
