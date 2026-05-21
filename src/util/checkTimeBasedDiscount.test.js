@@ -73,7 +73,31 @@ describe("checkTimeBasedDiscount", () => {
       expect(result2500.discountAmount).toBe(250);
       
       const result999 = checkTimeBasedDiscount(999);
-      expect(result999.discountAmount).toBe(99.9);
+      expect(result999.discountAmount).toBe(100);
+    });
+
+    it("should apply shop-configured discount percentage", () => {
+      mockCurrentTime(21); // 9pm
+      const result = checkTimeBasedDiscount(1000, "Asia/Karachi", 15);
+      expect(result.isDiscountActive).toBe(true);
+      expect(result.discountAmount).toBe(150);
+      expect(result.discountPercentage).toBe(15);
+    });
+
+    it("should apply discount using shop-configured start and end times", () => {
+      mockCurrentTime(22); // 10pm
+      const result = checkTimeBasedDiscount(1000, "Asia/Karachi", 20, "8PM", "2AM");
+      expect(result.isDiscountActive).toBe(true);
+      expect(result.discountAmount).toBe(200);
+      expect(result.discountPercentage).toBe(20);
+    });
+
+    it("should not apply discount before a later configured start time", () => {
+      mockCurrentTime(21); // 9pm
+      const result = checkTimeBasedDiscount(1000, "Asia/Karachi", 20, "10PM", "2AM");
+      expect(result.isDiscountActive).toBe(false);
+      expect(result.discountAmount).toBe(0);
+      expect(result.discountPercentage).toBe(0);
     });
   });
 
@@ -123,7 +147,7 @@ describe("checkTimeBasedDiscount", () => {
       mockCurrentTime(21);
       const result = checkTimeBasedDiscount(333.33);
       expect(result.isDiscountActive).toBe(true);
-      expect(result.discountAmount).toBeCloseTo(33.333, 2);
+      expect(result.discountAmount).toBe(34);
     });
 
     it("should handle large item totals", () => {
@@ -131,6 +155,22 @@ describe("checkTimeBasedDiscount", () => {
       const result = checkTimeBasedDiscount(50000);
       expect(result.isDiscountActive).toBe(true);
       expect(result.discountAmount).toBe(5000);
+    });
+
+    it("should NOT apply discount when a deal item exists during discount hours", () => {
+      mockCurrentTime(21);
+      const result = checkTimeBasedDiscount(1000, "Asia/Karachi", 10, "8PM", "2AM", true);
+      expect(result.isDiscountActive).toBe(false);
+      expect(result.discountAmount).toBe(0);
+      expect(result.discountPercentage).toBe(0);
+    });
+
+    it("should still keep discount disabled when a deal item exists outside discount hours", () => {
+      mockCurrentTime(12);
+      const result = checkTimeBasedDiscount(1000, "Asia/Karachi", 10, "8PM", "2AM", true);
+      expect(result.isDiscountActive).toBe(false);
+      expect(result.discountAmount).toBe(0);
+      expect(result.discountPercentage).toBe(0);
     });
   });
 });

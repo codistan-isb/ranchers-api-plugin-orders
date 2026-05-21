@@ -27,6 +27,7 @@ import pubSub from "../util/pubSubIntance.js";
 
 const GUEST_TOKEN =
   "4fca69b380be5f9898f435e548654c063f757562ca32fb9e5d09bb5d38d3295b";
+const DEAL_TAG_ID = "QxJefMA3viGnquk6Y";
 
 const inputSchema = new SimpleSchema({
   order: orderInputSchema,
@@ -268,6 +269,17 @@ export default async function placeOrder(context, input) {
 
   const shop = await context.queries.shopById(context, shopId);
   if (!shop) throw new ReactionError("not-found", "Shop not found");
+  if (
+    !shop?.discount ||
+    shop.discount?.discountValue == null ||
+    !shop.discount?.startTime ||
+    !shop.discount?.endTime
+  ) {
+    throw new ReactionError(
+      "invalid-param",
+      "Missing discount configuration in shop Object"
+    );
+  }
 
   // if (!userId && !shop.allowGuestCheckout) {
   //   throw new ReactionError("access-denied", "Guest checkout not allowed");
@@ -346,9 +358,24 @@ export default async function placeOrder(context, input) {
     })
   );
 
-  // Calculate time-based discount (8pm to 2am: 10% off)
+  const hasDealItem = initialFulfillmentGroups.some(({ group }) =>
+    (group.items || []).some((item) =>
+      item?.isDeal === true || item?.productTagIds?.includes(DEAL_TAG_ID)
+    )
+  ) || (cart?.items || []).some((item) =>
+    item?.isDeal === true || item?.productTagIds?.includes(DEAL_TAG_ID)
+  );
+
+  // Calculate time-based discount using Shop.discount object values.
   const clientTimeZone = customFieldsFromClient?.timeZone || customFieldsFromClient?.timezone || "Asia/Karachi";
-  const { isDiscountActive, discountAmount } = checkTimeBasedDiscount(itemsTotalBeforeDiscount, clientTimeZone);
+  const { isDiscountActive, discountAmount } = checkTimeBasedDiscount(
+    itemsTotalBeforeDiscount,
+    clientTimeZone,
+    shop.discount.discountValue,
+    shop.discount.startTime,
+    shop.discount.endTime,
+    hasDealItem
+  );
   if (isDiscountActive) {
     const timeBasedDiscountInfo = {
       amount: discountAmount,
