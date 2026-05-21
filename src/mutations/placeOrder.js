@@ -10,6 +10,7 @@ import verifyPaymentsMatchOrderTotal from "../util/verifyPaymentsMatchOrderTotal
 import doEasyPaisaPayment from "../util/easyPaisaPayment.js";
 import sendOrderEmail from "../util/sendOrderEmail.js";
 import encodeOpaqueId from "@reactioncommerce/api-utils/encodeOpaqueId.js";
+import checkTimeBasedDiscount from "../util/checkTimeBasedDiscount.js";
 
 import {
   Order as OrderSchema,
@@ -310,6 +311,7 @@ export default async function placeOrder(context, input) {
     ({ discounts } = discountsResult);
     discountTotal = discountsResult.total;
   }
+
   // Create array for surcharges to apply to order, if applicable
   // Array is populated inside `fulfillmentGroups.map()`
   const orderSurcharges = [];
@@ -317,10 +319,9 @@ export default async function placeOrder(context, input) {
   // Create orderId
   const orderId = Random.id();
 
-  // Add more props to each fulfillment group, and validate/build the items in each group
-  let orderTotal = 0;
-  let shippingAddressForPayments = null;
-  const finalFulfillmentGroups = await Promise.all(
+  // First pass: build fulfillment groups to calculate item totals
+  let itemsTotalBeforeDiscount = 0;
+  const initialFulfillmentGroups = await Promise.all(
     fulfillmentGroups.map(async (inputGroup) => {
       const { group, groupSurcharges } =
         await buildOrderFulfillmentGroupFromInput(context, {
@@ -337,7 +338,46 @@ export default async function placeOrder(context, input) {
           Latitude,
           Longitude,
         });
-      //console.log("group ", group)
+
+      // Accumulate items total before any discount
+      itemsTotalBeforeDiscount += (group.invoice.subtotal || 0);
+
+      return { group, groupSurcharges };
+    })
+  );
+
+  // Calculate time-based discount (8pm to 2am: 10% off)
+  const clientTimeZone = customFieldsFromClient?.timeZone || customFieldsFromClient?.timezone || "Asia/Karachi";
+  const { isDiscountActive, discountAmount } = checkTimeBasedDiscount(itemsTotalBeforeDiscount, clientTimeZone);
+  if (isDiscountActive) {
+    const timeBasedDiscountInfo = {
+      amount: discountAmount,
+      discountId: "night-discount-8pm-2am"
+    };
+    discounts.push(timeBasedDiscountInfo);
+    discountTotal += discountAmount;
+  }
+
+  // Second pass: rebuild groups with updated discount total if time-based discount was applied
+  let orderTotal = 0;
+  let shippingAddressForPayments = null;
+  const finalFulfillmentGroups = await Promise.all(
+    fulfillmentGroups.map(async (inputGroup) => {
+      const { group, groupSurcharges } =
+        await buildOrderFulfillmentGroupFromInput(context, {
+          accountId,
+          billingAddress,
+          cartId,
+          currencyCode,
+          discountTotal, // Now includes time-based discount if applicable
+          inputGroup,
+          orderId,
+          cart,
+          branchID,
+          notes,
+          Latitude,
+          Longitude,
+        });
 
       // We save off the first shipping address found, for passing to payment services. They use this
       // for fraud detection.
