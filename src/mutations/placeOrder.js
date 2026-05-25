@@ -315,14 +315,14 @@ export default async function placeOrder(context, input) {
   // any discounts on the related cart here.
   let discounts = [];
   let discountTotal = 0;
-  if (cart) {
-    const discountsResult = await context.queries.getDiscountsTotalForCart(
-      context,
-      cart
-    );
-    ({ discounts } = discountsResult);
-    discountTotal = discountsResult.total;
-  }
+  // if (cart) {
+  //   const discountsResult = await context.queries.getDiscountsTotalForCart(
+  //     context,
+  //     cart
+  //   );
+  //   ({ discounts } = discountsResult);
+  //   discountTotal = discountsResult.total;
+  // }
 
   // Create array for surcharges to apply to order, if applicable
   // Array is populated inside `fulfillmentGroups.map()`
