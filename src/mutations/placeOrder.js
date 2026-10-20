@@ -29,6 +29,22 @@ const GUEST_TOKEN =
   "4fca69b380be5f9898f435e548654c063f757562ca32fb9e5d09bb5d38d3295b";
 const DEAL_TAG_ID = "QxJefMA3viGnquk6Y";
 
+/**
+ * Pick the first positive delivery fee, otherwise the first valid numeric value (including 0).
+ * Shop, branch, and invoice shipping can disagree; a stored 0 should not hide a real fee.
+ */
+function resolveDeliveryFee(...values) {
+  let zeroFallback = null;
+  for (const value of values) {
+    if (value == null || value === "") continue;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) continue;
+    if (parsed > 0) return parsed;
+    if (zeroFallback === null) zeroFallback = parsed;
+  }
+  return zeroFallback;
+}
+
 const inputSchema = new SimpleSchema({
   order: orderInputSchema,
   payments: {
@@ -65,7 +81,8 @@ async function
     taxPercentage,
     fulfillmentType,
     fulfillmentGroups,
-    discountTotal
+    discountTotal,
+    deliveryCharges
   }) {
 
   // Determining which payment methods are enabled for the shop
@@ -85,24 +102,29 @@ async function
   const amount = totalAmount + tax;
 
   // Create authorized payments for each
-  const paymentPromises = (paymentsInput || []).map(async (paymentInput) => {
+  const paymentPromises = (paymentsInput || []).map(async (paymentInput, paymentIndex) => {
     const {
       method: methodName
     } = paymentInput;
 
-    // Calculate finalAmount based on fulfillment type
-    let finalAmount;
+    // Delivery must be on both amount (cash/COD due) and finalAmount (gateway/payable).
+    let payableAmount = amount;
+    let finalAmount = amount;
     if (fulfillmentType === "shipping") {
-      if (shop?.deliveryCharges == null || shop?.deliveryCharges == undefined) {
+      if (deliveryCharges == null || !Number.isFinite(Number(deliveryCharges))) {
         throw new ReactionError(
           "payment-failed",
           `Missing key deliveryCharges in shop Object`
         );
       }
-      finalAmount = amount + parseInt(shop?.deliveryCharges); // Adding delivery fee of 50 for shipping
-    } else {
-      finalAmount = amount; // Just totalAmount + tax for pickup
+      const deliveryFee = Number(deliveryCharges);
+      payableAmount = amount + deliveryFee;
+      finalAmount = payableAmount;
     }
+
+    // Apply order-level discounts once so the payable amount is reflected correctly.
+    const discountForThisPayment = paymentIndex === 0 ? discountTotal : 0;
+    finalAmount = Math.max(finalAmount - discountForThisPayment, 0);
 
     // Verify that this payment method is enabled for the shop
     if (!availablePaymentMethods.includes(methodName)) {
@@ -130,7 +152,7 @@ async function
       context,
       {
         accountId,
-        amount,
+        amount: payableAmount,
         tax,
         totalAmount,
         finalAmount,
@@ -149,6 +171,7 @@ async function
       // This is from previous support for exchange rates, which was removed in v3.0.0
       currency: { exchangeRate: 1, userCurrency: currencyCode },
       currencyCode,
+      amount: payableAmount,
       finalAmount,
     };
 
@@ -423,6 +446,28 @@ export default async function placeOrder(context, input) {
     })
   );
 
+  const fulfillmentType = fulfillmentGroups[0]?.type;
+  const deliveryFee = resolveDeliveryFee(
+    shop?.deliveryCharges,
+    deliveryCharges,
+    finalFulfillmentGroups[0]?.invoice?.shipping,
+    finalFulfillmentGroups[0]?.shipmentMethod?.rate
+  );
+
+  if (fulfillmentType === "shipping" && deliveryFee > 0) {
+    for (const group of finalFulfillmentGroups) {
+      const invoiceShipping = Number(group?.invoice?.shipping) || 0;
+      if (group?.invoice && invoiceShipping === 0) {
+        group.invoice.shipping = deliveryFee;
+        group.invoice.total = (group.invoice.total || 0) + deliveryFee;
+        orderTotal += deliveryFee;
+      }
+      if (group?.shipmentMethod && (!group.shipmentMethod.rate || group.shipmentMethod.rate === 0)) {
+        group.shipmentMethod.rate = deliveryFee;
+      }
+    }
+  }
+
   const payments = await createPayments({
     accountId,
     billingAddress,
@@ -434,9 +479,10 @@ export default async function placeOrder(context, input) {
     shippingAddress: shippingAddressForPayments,
     shop,
     taxPercentage,
-    fulfillmentType: fulfillmentGroups[0]?.type,
+    fulfillmentType,
     fulfillmentGroups,
-    discountTotal
+    discountTotal,
+    deliveryCharges: deliveryFee
   });
   if (payments[0].totalAmount < 500) {
     throw new ReactionError(
@@ -566,7 +612,7 @@ export default async function placeOrder(context, input) {
       email,
       responseCode: "NA",
       responseMessage: "NA",
-      amount: payments[0].finalAmount - discountTotal,
+      amount: payments[0].finalAmount,
       status: "PENDING",
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -578,7 +624,7 @@ export default async function placeOrder(context, input) {
     Transaction.insertOne(transactionRecordObj).then((result) => {
       console.log("TRANSACTION RECORD in Place Order", result?.insertedId);
 
-      doEasyPaisaPayment(kitchenOrderID, opaqueOrderId, null, payments[0].finalAmount - discountTotal, null, jazzCashNumber, email,result?.insertedId, Transaction, Orders)
+      doEasyPaisaPayment(kitchenOrderID, opaqueOrderId, null, payments[0].finalAmount, null, jazzCashNumber, email,result?.insertedId, Transaction, Orders)
         .then((response) => {
           console.log("easyPaisaResponse in place order", response)
         })
