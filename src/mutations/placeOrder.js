@@ -447,22 +447,30 @@ export default async function placeOrder(context, input) {
   );
 
   const fulfillmentType = fulfillmentGroups[0]?.type;
+  // Prefer branch fee over shop; quote/invoice rates are last-resort fallbacks only.
   const deliveryFee = resolveDeliveryFee(
-    shop?.deliveryCharges,
     deliveryCharges,
+    shop?.deliveryCharges,
     finalFulfillmentGroups[0]?.invoice?.shipping,
     finalFulfillmentGroups[0]?.shipmentMethod?.rate
   );
 
+  // Always align invoice + shipmentMethod with the resolved fee for shipping orders.
+  // Previously we only patched when invoice.shipping === 0, so a non-zero (often wrong)
+  // fulfillment quote rate blocked shop/branch delivery from being added to the total.
   if (fulfillmentType === "shipping" && deliveryFee > 0) {
     for (const group of finalFulfillmentGroups) {
-      const invoiceShipping = Number(group?.invoice?.shipping) || 0;
-      if (group?.invoice && invoiceShipping === 0) {
+      if (!group?.invoice) continue;
+
+      const invoiceShipping = Number(group.invoice.shipping) || 0;
+      const shippingDelta = deliveryFee - invoiceShipping;
+      if (shippingDelta !== 0) {
         group.invoice.shipping = deliveryFee;
-        group.invoice.total = (group.invoice.total || 0) + deliveryFee;
-        orderTotal += deliveryFee;
+        group.invoice.total = (group.invoice.total || 0) + shippingDelta;
+        orderTotal += shippingDelta;
       }
-      if (group?.shipmentMethod && (!group.shipmentMethod.rate || group.shipmentMethod.rate === 0)) {
+
+      if (group.shipmentMethod) {
         group.shipmentMethod.rate = deliveryFee;
       }
     }
