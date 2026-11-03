@@ -1,11 +1,60 @@
-// const axios = require('axios');
-import axios from "axios";
 import ReactionError from "@reactioncommerce/reaction-error";
 import pkg from "mongodb";
 const { ObjectId } = pkg;
 import pubSub from "../util/pubSubIntance.js";
 import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
+import {
+  normalizeEasyPaisaMsisdn,
+  postEasyPaisaMaRequest
+} from "./easyPaisaClient.js";
 
+/**
+ * Resolve whether an initiate-transaction response is success, pending, or failure.
+ * Sync success uses 0000 / SUCCESS; async pending uses 040.
+ * @param {Object} data
+ * @returns {"SUCCESS"|"PENDING"|"FAILED"}
+ */
+function resolveInitiateStatus(data = {}) {
+  const code = String(data.responseCode ?? "");
+  const desc = String(data.responseDesc || data.responseMessage || "").toUpperCase();
+
+  if (code === "0000" || (code === "000" && desc.includes("SUCCESS"))) {
+    return "SUCCESS";
+  }
+  if (code === "040" || desc.includes("PAYMENT CONFIRMATION PENDING")) {
+    return "PENDING";
+  }
+  return "FAILED";
+}
+
+function publishPaymentStatus({ branchId, opaqueOrderId, lookupId, paymentStatus, isPaid, paymentInitiatedAt }) {
+  const payload = {
+    orderId: lookupId,
+    paymentStatus,
+    updatedAt: new Date(),
+    isPaid,
+    paymentMethod: "EASYPAISA"
+  };
+  if (paymentInitiatedAt) {
+    payload.paymentInitiatedAt = paymentInitiatedAt;
+  }
+
+  if (branchId) {
+    pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${branchId}`, {
+      orderPaymentStatusUpdated: { ...payload, orderId: lookupId }
+    });
+  }
+
+  if (opaqueOrderId) {
+    pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${opaqueOrderId}`, {
+      orderPaymentStatusUpdated: { ...payload, orderId: opaqueOrderId }
+    });
+  }
+}
+
+/**
+ * Initiate an EasyPaisa Mobile Account transaction (API Integration Guide V1.5).
+ */
 export default async function doEasyPaisaPayment(
   kitchenOrderID,
   orderId,
@@ -18,9 +67,6 @@ export default async function doEasyPaisaPayment(
   TransactionDb,
   OrdersDb
 ) {
-
-
-  // Validate transaction amount
   if (!transactionAmount || isNaN(transactionAmount) || transactionAmount <= 0) {
     throw new ReactionError(
       "invalid-payment",
@@ -28,28 +74,31 @@ export default async function doEasyPaisaPayment(
     );
   }
 
-  let data = JSON.stringify({
-    "orderId": kitchenOrderID || "abc123",
-    "storeId": storeId || process.env.EASYPAISASTOREID,
-    "transactionAmount": process.env.ENVIRONMENT == "development" || process.env.ENVIRONMENT == "staging" ? 1 : transactionAmount,
-    "transactionType": transactionType || "MA",
-    "mobileAccountNo": mobileAccountNo,
-    "emailAddress": emailAddress,
-    "optional1": orderId,
-    "optional2": TransactionRecord.toString(),
-  });
-  console.log("data ", data)
-  let config = {
-    method: 'post',
-    maxBodyLength: Infinity,
-    url: 'https://easypay.easypaisa.com.pk/easypay-service/rest/v4/initiate-ma-transaction',
-    headers: {
-      'Credentials': process.env.EASYPAISACREDENTIALS,
-      'Content-Type': 'application/json',
-      'Cookie': 'f5avraaaaaaaaaaaaaaaa_session_=HLMGKINDPKOJPKHOFEJMHOFEAPLIEDNBIFMADPFDMFDBKJMAKJPJNJDHBOMIFKDDNPJDBLJAELGDJNPNGKFAHGPIBDFNHNIPGPKKOPNLFAMPKIHGHMCEGFLIEIAJCECG; TS01f2a187=011c1a8db659dbb038859aba2f36856f49c5f911252f3f7aa8f963e626dc41fc3e6bf3995de8df0b30f8604415537bd0b25978dbb226ae694d9bffc43ef74feae68d5e4754; f5avraaaaaaaaaaaaaaaa_session_=DKJDJDGCAKOILNAIFIMBBPDNGBEELNCHEKICBGFHGICKPLHBPDALCJIMBPPODMIGGPFDJNOKBBCECALJIFOADBPJBCIJKCAHMDAOJGFAOIKNDBIADHNFAFCCEBAIOJHP; TS01f2a187=011c1a8db62ea093b93cb0f4b4084e8c77949764178c31e2d7b022ef68219ae814908501b769506889b7f1a1e288e8efe804be3e6a042c4ca76066fb41057d939d4f9f4cf4'
-    },
-    data: data
+  const msisdn = normalizeEasyPaisaMsisdn(mobileAccountNo);
+  if (!msisdn) {
+    throw new ReactionError(
+      "invalid-payment",
+      "A valid mobile number is required for EasyPaisa payments"
+    );
+  }
+
+  const amount =
+    process.env.ENVIRONMENT === "development" || process.env.ENVIRONMENT === "staging"
+      ? 1
+      : Number(transactionAmount);
+
+  // orderId max length is 20 per V1.5; kitchenOrderID is the merchant reference.
+  const easypaisaOrderId = String(kitchenOrderID || orderId || "abc123").slice(0, 20);
+
+  const requestPayload = {
+    msisdn,
+    orderId: easypaisaOrderId,
+    transactionAmount: amount,
+    emailAddress: emailAddress || "",
+    channel: process.env.EASYPAISACHANNEL || "APP",
+    storeId: String(storeId || process.env.EASYPAISASTOREID || "")
   };
+
   let decodedId;
   try {
     decodedId = decodeOpaqueId(orderId);
@@ -57,124 +106,139 @@ export default async function doEasyPaisaPayment(
     decodedId = null;
   }
   const lookupId = decodedId?.id || orderId;
-  const paymentInitiatedAt = new Date().toISOString()
+  const paymentInitiatedAt = new Date().toISOString();
+
   const orderData = await OrdersDb.findOneAndUpdate(
     { _id: lookupId },
-    { $set: { paymentStatus: "PENDING", isPaid: false, paymentInitiatedAt: paymentInitiatedAt } },
+    { $set: { paymentStatus: "PENDING", isPaid: false, paymentInitiatedAt } },
     { new: true }
   );
   const branchId = orderData?.value?.branchID;
-  console.log("branch iD ", branchId);
-  if (branchId) {
-    console.log("Publishing to branch-specific channel:", `ORDER_PAYMENT_STATUS_UPDATED_${branchId}`);
 
-    pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${branchId}`, {
-      orderPaymentStatusUpdated: {
-        orderId: lookupId,
-        paymentStatus: "PENDING",
-        updatedAt: new Date(),
-        isPaid: false,
-        paymentMethod: "EASYPAISA",
-        paymentInitiatedAt: paymentInitiatedAt
-        
-      }
-    });
-  }
-  pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${orderId}`, {
-    orderPaymentStatusUpdated: {
-      orderId: orderId,
-      paymentStatus: "PENDING",
-      updatedAt: new Date(),
-        paymentMethod: "EASYPAISA",
-      isPaid: false,
-      paymentInitiatedAt: paymentInitiatedAt
-    }
+  publishPaymentStatus({
+    branchId,
+    opaqueOrderId: orderId,
+    lookupId,
+    paymentStatus: "PENDING",
+    isPaid: false,
+    paymentInitiatedAt
   });
-  const response = await axios.request(config)
-    .then(async (response) => {
-      console.log("response of easypaisa", JSON.stringify(response.data));
 
-      // Update transaction in database
-      if (response.data && TransactionDb) {
-        try {
-          const { optional1, responseDesc, responseCode, transactionId, transactionDateTime, optional2 } = response.data; // Assuming optional1 contains the orderId
+  try {
+    console.log("EasyPaisa initiate-transaction request", JSON.stringify(requestPayload));
+    const responseData = await postEasyPaisaMaRequest("/initiate-transaction", requestPayload);
+    console.log("response of easypaisa", JSON.stringify(responseData));
 
-          // First verify that this order actually exists
-          let decodedId;
-          try {
-            decodedId = decodeOpaqueId(optional1);
-          } catch (e) {
-            decodedId = null;
+    const status = resolveInitiateStatus(responseData);
+    const {
+      responseDesc,
+      responseCode,
+      transactionId,
+      transactionDateTime,
+      orderId: responseOrderId
+    } = responseData || {};
+
+    if (TransactionDb) {
+      try {
+        const transactionFilter = TransactionRecord
+          ? { _id: ObjectId(TransactionRecord) }
+          : { orderId: lookupId, kitchenOrderID: easypaisaOrderId, status: "PENDING" };
+
+        await TransactionDb.updateOne(transactionFilter, {
+          $set: {
+            raw: responseData,
+            responseMessage: responseDesc,
+            status: status === "PENDING" ? "PENDING" : (responseDesc || status),
+            responseCode,
+            transactionId: transactionId || "NA",
+            updatedAt: new Date(),
+            transactionDateTime: transactionDateTime || "NA",
+            kitchenOrderID: easypaisaOrderId,
+            orderId: lookupId
           }
-          const lookupId = decodedId?.id || orderId;
-          await TransactionDb.updateOne(
-            { orderId: lookupId, _id: ObjectId(optional2) },
-            {
-              $set: {
-                raw: response.data,
-                responseMessage: responseDesc,
-                status: responseDesc,
-                responseCode: responseCode,
-                transactionId: transactionId,
-                updatedAt: new Date(),
-                transactionDateTime: transactionDateTime
-              }
-            }
-          );
-          const isSuccess = responseDesc === "SUCCESS" && responseCode === "0000";
-          try {
-            const orderObj = await OrdersDb.findOneAndUpdate(
-              { _id: lookupId },
-              {
-                $set: {
-                  isPaid: isSuccess,
-                  paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
-                  transactionId: transactionId || null,
-                  updatedAt: new Date(),
-                },
-              },
-              { new: true }
-
-            );
-            const bId = orderObj?.value?.branchID;
-            if (bId) {
-              console.log("Publishing to branch-specific channel:", `ORDER_PAYMENT_STATUS_UPDATED_${bId}`);
-
-              pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${bId}`, {
-                orderPaymentStatusUpdated: {
-        paymentMethod: "EASYPAISA",
-                  orderId: lookupId,
-                  paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
-                  updatedAt: new Date(),
-                  isPaid: isSuccess,
-                }
-              });
-            }
-
-            pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${optional1}`, {
-              orderPaymentStatusUpdated: {
-                orderId: optional1,
-                paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
-        paymentMethod: "EASYPAISA",
-                updatedAt: new Date(),
-                isPaid: isSuccess,
-              }
-            });
-            console.log(`Order ${lookupId} updated from EasyPaisa response with status ${responseDesc}`);
-          } catch (orderUpdateError) {
-            console.error("Error updating order from EasyPaisa response:", orderUpdateError.message);
-          }
-          console.log("Transaction updated in database successfully");
-        } catch (dbError) {
-          console.error("Error updating transaction in database:", dbError);
-        }
+        });
+      } catch (dbError) {
+        console.error("Error updating transaction in database:", dbError);
       }
+    }
 
-      return response.data;
-    })
-    .catch((error) => {
-      console.log("error of easypaisa ", error);
-      return false
-    });
-  return response
+    // Async (040): leave order PENDING until IPN confirms payment.
+    // Sync success: mark paid. Any other code: mark failed.
+    if (status !== "PENDING") {
+      const isSuccess = status === "SUCCESS";
+      try {
+        const orderObj = await OrdersDb.findOneAndUpdate(
+          { _id: lookupId },
+          {
+            $set: {
+              isPaid: isSuccess,
+              paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
+              transactionId: transactionId || null,
+              updatedAt: new Date()
+            }
+          },
+          { new: true }
+        );
+
+        publishPaymentStatus({
+          branchId: orderObj?.value?.branchID || branchId,
+          opaqueOrderId: orderId,
+          lookupId,
+          paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
+          isPaid: isSuccess
+        });
+
+        console.log(
+          `Order ${lookupId} updated from EasyPaisa response with status ${responseDesc} (orderId=${responseOrderId})`
+        );
+      } catch (orderUpdateError) {
+        console.error("Error updating order from EasyPaisa response:", orderUpdateError.message);
+      }
+    } else {
+      console.log(`Order ${lookupId} EasyPaisa payment pending IPN confirmation`);
+    }
+
+    return responseData;
+  } catch (error) {
+    console.log("error of easypaisa ", error?.response?.data || error.message || error);
+
+    try {
+      await OrdersDb.findOneAndUpdate(
+        { _id: lookupId },
+        {
+          $set: {
+            isPaid: false,
+            paymentStatus: "FAILED",
+            updatedAt: new Date()
+          }
+        },
+        { new: true }
+      );
+      publishPaymentStatus({
+        branchId,
+        opaqueOrderId: orderId,
+        lookupId,
+        paymentStatus: "FAILED",
+        isPaid: false
+      });
+
+      if (TransactionDb && TransactionRecord) {
+        await TransactionDb.updateOne(
+          { _id: ObjectId(TransactionRecord) },
+          {
+            $set: {
+              status: "FAILED",
+              responseMessage: error?.response?.data?.responseDesc || error.message || "EasyPaisa request failed",
+              raw: error?.response?.data || null,
+              updatedAt: new Date()
+            }
+          }
+        );
+      }
+    } catch (updateError) {
+      console.error("Error marking EasyPaisa payment as failed:", updateError.message);
+    }
+
+    return false;
+  }
 }

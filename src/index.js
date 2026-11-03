@@ -5,6 +5,7 @@ import bodyParser from "body-parser";
 import morgan from "morgan";
 import axios from "axios";
 import https from "https";
+import pkgMongo from "mongodb";
 import mutations from "./mutations/index.js";
 import policies from "./policies.json";
 import preStartup from "./preStartup.js";
@@ -15,6 +16,9 @@ import { Order, OrderFulfillmentGroup, OrderItem } from "./simpleSchemas.js";
 import startup from "./startup.js";
 import getDataForOrderEmail from "./util/getDataForOrderEmail.js";
 import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
+import pubSub from "./util/pubSubIntance.js";
+
+const { ObjectId } = pkgMongo;
 
 
 /**
@@ -85,89 +89,124 @@ function IPNPayment(context) {
       }
     });
 
-    // Webhook endpoint for receiving EasyPaisa events (POST request with URL parameter)
+    // EasyPaisa IPN (API Integration Guide V1.5).
+    // Merchant must respond with responseCode "00" (accept) or "01" (reject).
+    // Legacy query `?url=` status-fetch flow is still supported during migration.
     app.expressApp.post("/webhook/easypaisa", async (req, res) => {
       try {
-        console.log("EasyPaisa webhook received with query params:", req.query);
+        console.log("EasyPaisa IPN received. query:", req.query, "body:", req.body);
 
         const { collections } = context;
         const { Orders, Transaction } = collections;
         const statusUrl = req.query.url;
 
-        if (!statusUrl) {
+        let transactionData = req.body && Object.keys(req.body).length ? req.body : null;
+
+        // Legacy V4 flow: fetch status from EasyPaisa URL
+        if (!transactionData && statusUrl) {
+          let parsedUrl;
+          try {
+            parsedUrl = new URL(statusUrl);
+          } catch (err) {
+            return res.status(400).json({
+              responseCode: "01",
+              success: false,
+              message: "Invalid URL format",
+            });
+          }
+
+          const allowedDomains = [
+            "easypay.easypaisa.com.pk",
+            "gateway-service-sandbox.easypaisa.com.pk",
+            "gateway-service.easypaisa.com.pk",
+          ];
+          if (!allowedDomains.includes(parsedUrl.hostname)) {
+            console.warn(`Rejected request to unauthorized domain: ${parsedUrl.hostname}`);
+            return res.status(403).json({
+              responseCode: "01",
+              success: false,
+              message: "URL domain not allowed. Only EasyPaisa domains are accepted.",
+            });
+          }
+
+          try {
+            const statusResponse = await axios.get(statusUrl, { timeout: 10000 });
+            transactionData = statusResponse.data;
+          } catch (fetchError) {
+            console.error("Error fetching EasyPaisa status:", fetchError.message);
+            return res.status(500).json({
+              responseCode: "01",
+              success: false,
+              message: "Error fetching transaction status from EasyPaisa",
+              error: fetchError.message,
+            });
+          }
+        }
+
+        if (!transactionData) {
           return res.status(400).json({
+            responseCode: "01",
             success: false,
-            message: "Missing url parameter",
+            message: "Missing EasyPaisa IPN payload",
           });
         }
 
-        // Validate URL to prevent SSRF attacks
-        let parsedUrl;
-        try {
-          parsedUrl = new URL(statusUrl);
-        } catch (err) {
-          return res.status(400).json({
-            success: false,
-            message: "Invalid URL format",
-          });
-        }
+        console.log("EasyPaisa transaction data:", JSON.stringify(transactionData, null, 2));
 
-        // Whitelist allowed domains for EasyPaisa
-        const allowedDomains = ["easypay.easypaisa.com.pk"];
-        const isAllowedDomain = allowedDomains.some(domain => parsedUrl.hostname === domain);
-
-        if (!isAllowedDomain) {
-          console.warn(`Rejected request to unauthorized domain: ${parsedUrl.hostname}`);
-          return res.status(403).json({
-            success: false,
-            message: "URL domain not allowed. Only EasyPaisa domains are accepted.",
-          });
-        }
-
-        console.log("EasyPaisa status URL:", statusUrl);
-
-        // Fetch transaction status from EasyPaisa
-        let transactionData;
-        try {
-          const statusResponse = await axios.get(statusUrl, {
-            timeout: 10000, // 10 second timeout
-          });
-          transactionData = statusResponse.data;
-          console.log("EasyPaisa transaction data:", JSON.stringify(transactionData, null, 2));
-        } catch (fetchError) {
-          console.error("Error fetching EasyPaisa status:", fetchError.message);
-          return res.status(500).json({
-            success: false,
-            message: "Error fetching transaction status from EasyPaisa",
-            error: fetchError.message,
-          });
-        }
-
-
-
-        // Update order based on transaction data
-        const orderIdFromTxn = transactionData?.optional1;
+        const kitchenOrderID =
+          transactionData?.order_id ||
+          transactionData?.orderId ||
+          transactionData?.optional1;
         const transactionRecord = transactionData?.optional2;
-        const kitchenOrderID = transactionData?.order_id;
-        const transactionIdFromTxn = transactionData?.transaction_id;
-        const transactionStatus = (transactionData?.transaction_status || "").toUpperCase();
-        const responseCode = transactionData?.response_code;
+        const transactionIdFromTxn =
+          transactionData?.transaction_id || transactionData?.transactionId;
+        const transactionStatus = String(
+          transactionData?.transaction_status ||
+          transactionData?.transactionStatus ||
+          ""
+        ).toUpperCase();
+        const responseCode =
+          transactionData?.response_code ||
+          transactionData?.responseCode;
 
-        // First verify that this order actually exists
-        let decodedId;
-        try {
-          decodedId = decodeOpaqueId(orderIdFromTxn);
-        } catch (e) {
-          decodedId = null;
+        let lookupId = null;
+        let orderDoc = null;
+
+        if (kitchenOrderID) {
+          // V1.5: order_id is the merchant orderId sent at initiate (kitchenOrderID).
+          orderDoc = await Orders.findOne({ kitchenOrderID: String(kitchenOrderID) });
+
+          if (!orderDoc) {
+            let decodedId;
+            try {
+              decodedId = decodeOpaqueId(kitchenOrderID);
+            } catch (e) {
+              decodedId = null;
+            }
+            const fallbackId = decodedId?.id || kitchenOrderID;
+            orderDoc = await Orders.findOne({ _id: fallbackId });
+          }
+
+          lookupId = orderDoc?._id || null;
         }
-        const lookupId = decodedId?.id || orderId;
-        if (orderIdFromTxn) {
-          const isSuccess = transactionStatus === "PAID" && responseCode === "0000";
+
+        if (lookupId) {
+          const failedStatuses = new Set(["FAILED", "FAILURE", "UNPAID", "EXPIRED", "CANCELLED", "CANCELED"]);
+          const successStatuses = new Set(["PAID", "SUCCESS"]);
+          let isSuccess = false;
+          if (successStatuses.has(transactionStatus)) {
+            isSuccess = true;
+          } else if (failedStatuses.has(transactionStatus)) {
+            isSuccess = false;
+          } else if (String(responseCode) === "0000" || String(responseCode) === "000") {
+            isSuccess = true;
+          }
+
           try {
             const orderObj = await Orders.findOneAndUpdate(
               {
                 _id: lookupId,
-                isPaid: { $ne: true }  // Only update if not already paid
+                isPaid: { $ne: true }
               },
               {
                 $set: {
@@ -178,113 +217,147 @@ function IPNPayment(context) {
                 },
               },
               { new: true }
-
             );
 
-            const bId = orderObj?.value?.branchID;
-            const paymentMethod = orderObj?.value?.paymentMethod ;
+            const updatedOrder = orderObj?.value || orderDoc;
+            const bId = updatedOrder?.branchID;
+            const paymentMethod = updatedOrder?.paymentMethod || "EASYPAISA";
+
             if (bId) {
-              console.log("Publishing to branch-specific channel:", `ORDER_PAYMENT_STATUS_UPDATED_${bId}`);
               pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${bId}`, {
                 orderPaymentStatusUpdated: {
                   orderId: lookupId,
                   paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
                   updatedAt: new Date(),
-                  paymentMethod:paymentMethod,
+                  paymentMethod,
                   isPaid: isSuccess
                 }
               });
             }
-            pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${orderIdFromTxn}`, {
+            pubSub.publish(`ORDER_PAYMENT_STATUS_UPDATED_${lookupId}`, {
               orderPaymentStatusUpdated: {
-                orderId: orderIdFromTxn,
+                orderId: lookupId,
                 paymentStatus: isSuccess ? "SUCCESS" : "FAILED",
-                  paymentMethod:paymentMethod,
+                paymentMethod,
                 updatedAt: new Date(),
                 isPaid: isSuccess
-
               }
             });
-            console.log(`Order ${lookupId} updated from EasyPaisa webhook with status ${transactionStatus}`);
+            console.log(`Order ${lookupId} updated from EasyPaisa IPN with status ${transactionStatus || responseCode}`);
           } catch (orderUpdateError) {
-            console.error("Error updating order from EasyPaisa webhook:", orderUpdateError.message);
+            console.error("Error updating order from EasyPaisa IPN:", orderUpdateError.message);
+            return res.status(500).json({
+              responseCode: "01",
+              success: false,
+              message: "Error updating order",
+              error: orderUpdateError.message,
+            });
           }
 
-          // Optionally persist transaction data for audit
           try {
+            let transactionFilter = {
+              orderId: lookupId,
+              status: "PENDING"
+            };
+            if (transactionRecord) {
+              try {
+                transactionFilter = { _id: ObjectId(transactionRecord) };
+              } catch (e) {
+                console.warn("Invalid optional2 transaction record id on EasyPaisa IPN");
+              }
+            } else if (transactionIdFromTxn) {
+              transactionFilter = {
+                $or: [
+                  { orderId: lookupId, status: "PENDING" },
+                  { kitchenOrderID: String(kitchenOrderID), status: "PENDING" },
+                  { transactionId: transactionIdFromTxn }
+                ]
+              };
+            }
+
             await Transaction.updateOne(
-              {
-                orderId: lookupId,
-                _id: ObjectId(transactionRecord)
-              },
+              transactionFilter,
               {
                 $set: {
-                  // orderId: orderIdFromTxn,
-                  paidAmount: transactionData?.transaction_amount,
-                  responseMessage: `Transaction description: ${transactionData?.description}`,
+                  paidAmount: transactionData?.transaction_amount || transactionData?.transactionAmount,
+                  responseMessage: transactionData?.description || transactionData?.responseDesc || transactionStatus,
                   raw: transactionData,
-                  statusUrl: statusUrl,
+                  ...(statusUrl ? { statusUrl } : {}),
                   updatedAt: new Date(),
                   responseCode: responseCode,
-                  status: transactionStatus,
+                  status: isSuccess ? "SUCCESS" : (transactionStatus || "FAILED"),
                   transactionId: transactionIdFromTxn,
-                  transactionDateTime: transactionData?.paid_datetime,
+                  transactionDateTime: transactionData?.paid_datetime || transactionData?.transactionDateTime,
+                  kitchenOrderID: String(kitchenOrderID),
+                  orderId: lookupId,
                 }
               }
             );
           } catch (transactionUpdateError) {
-            console.error("Error upserting transaction record from EasyPaisa webhook:", transactionUpdateError.message);
+            console.error("Error upserting transaction record from EasyPaisa IPN:", transactionUpdateError.message);
           }
         } else {
-          console.warn("EasyPaisa webhook missing order_id; skipping order update");
+          console.warn("EasyPaisa IPN missing resolvable order_id; rejecting notification");
+          return res.status(200).json({
+            responseCode: "01",
+            success: false,
+            message: "Order not found for IPN",
+          });
         }
 
-        // Forward to Finnect with statusUrl as query param
-        void axios.post(
-          "https://api.finnect.com.pk/ipn/easypaisa",
-          {},
-          {
-            params: { url: statusUrl },
-            headers: {
-              "Content-Type": "application/json",
-            },
-            timeout: 10000,
-            httpsAgent: finnectHttpsAgent,
-          }
-        ).then((forwardResponse) => {
-          console.log("Forwarded to Finnect successfully:", forwardResponse.data);
-        }).catch((forwardError) => {
-          console.error("Error forwarding to Finnect:", forwardError.message);
-          // continue processing even if forward fails
-        });
-
-        // In production also forward to Ranchers staging webhook for monitoring
-        if ((process.env.NODE_ENV || "").toLowerCase() === "production") {
+        // Forward for monitoring (best-effort)
+        if (statusUrl) {
           void axios.post(
-            "https://api.staging.rancherscafe.com/webhook/easypaisa",
+            "https://api.finnect.com.pk/ipn/easypaisa",
             {},
             {
               params: { url: statusUrl },
-              headers: {
-                "Content-Type": "application/json",
-              },
+              headers: { "Content-Type": "application/json" },
+              timeout: 10000,
+              httpsAgent: finnectHttpsAgent,
+            }
+          ).catch((forwardError) => {
+            console.error("Error forwarding to Finnect:", forwardError.message);
+          });
+        } else {
+          void axios.post(
+            "https://api.finnect.com.pk/ipn/easypaisa",
+            transactionData,
+            {
+              headers: { "Content-Type": "application/json" },
+              timeout: 10000,
+              httpsAgent: finnectHttpsAgent,
+            }
+          ).catch((forwardError) => {
+            console.error("Error forwarding to Finnect:", forwardError.message);
+          });
+        }
+
+        if ((process.env.NODE_ENV || "").toLowerCase() === "production") {
+          void axios.post(
+            "https://api.staging.rancherscafe.com/webhook/easypaisa",
+            transactionData,
+            {
+              ...(statusUrl ? { params: { url: statusUrl } } : {}),
+              headers: { "Content-Type": "application/json" },
               timeout: 10000,
               httpsAgent: finnectHttpsAgent,
             }
           ).catch((ranchersForwardError) => {
             console.error("Error forwarding to Ranchers staging webhook:", ranchersForwardError.message);
-            // continue processing even if forward fails
           });
         }
-        // Send acknowledgment response
+
+        // V1.5: 00 = accept transaction, 01 = reject / drop
         return res.status(200).json({
+          responseCode: "00",
           success: true,
-          message: "Webhook processed successfully",
-          transactionData: transactionData,
+          message: "IPN processed successfully",
         });
       } catch (error) {
         console.error("Error processing EasyPaisa webhook:", error);
         return res.status(500).json({
+          responseCode: "01",
           success: false,
           message: "Error processing webhook",
           error: error.message,
