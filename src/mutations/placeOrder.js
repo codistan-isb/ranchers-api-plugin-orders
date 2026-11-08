@@ -10,7 +10,7 @@ import verifyPaymentsMatchOrderTotal from "../util/verifyPaymentsMatchOrderTotal
 import doEasyPaisaPayment from "../util/easyPaisaPayment.js";
 import sendOrderEmail from "../util/sendOrderEmail.js";
 import encodeOpaqueId from "@reactioncommerce/api-utils/encodeOpaqueId.js";
-import checkTimeBasedDiscount from "../util/checkTimeBasedDiscount.js";
+import checkTimeBasedDiscount, { sumNonDealItemsTotal } from "../util/checkTimeBasedDiscount.js";
 
 import {
   Order as OrderSchema,
@@ -27,7 +27,47 @@ import pubSub from "../util/pubSubIntance.js";
 
 const GUEST_TOKEN =
   "4fca69b380be5f9898f435e548654c063f757562ca32fb9e5d09bb5d38d3295b";
-const DEAL_TAG_ID = "QxJefMA3viGnquk6Y";
+
+/**
+ * Promo codes are stored on cart.billing by the discount-codes plugin.
+ * A cart with one of those entries does not also get the time-based discount.
+ */
+function cartHasPromoCode(cart) {
+  return (cart?.billing || []).some((entry) =>
+    entry?.name === "discount_code" || entry?.paymentPluginName === "discount-codes"
+  );
+}
+
+/**
+ * @summary The promo amount checkout already showed (`cart.discount`), stored once.
+ *   Do not recalculate it on top of that value, and do not add it to `discountTotal`.
+ *   Writing it in both places is what turned a 70 checkout discount into 140 on the order.
+ * @param {Object} context App context
+ * @param {Object} cart Cart with a promo billing entry
+ * @returns {Promise<Object[]>} One order discount row, or none
+ */
+async function promoDiscountsForOrder(context, cart) {
+  const billing = (cart?.billing || []).find((entry) =>
+    entry?.name === "discount_code" || entry?.paymentPluginName === "discount-codes"
+  );
+  const discountId = String(billing?.data?.discountId || billing?.data?.code || "promo-code");
+
+  let amount = Number(cart?.discount) || 0;
+
+  if (amount <= 0 && typeof context.queries?.getDiscountsTotalForCart === "function") {
+    const result = await context.queries.getDiscountsTotalForCart(context, cart);
+    const seen = new Set();
+    for (const row of result?.discounts || []) {
+      const id = String(row?.discountId || "");
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      amount += Number(row?.amount) || 0;
+    }
+  }
+
+  if (amount <= 0) return [];
+  return [{ discountId, amount }];
+}
 
 /**
  * Pick the first positive delivery fee, otherwise the first valid numeric value (including 0).
@@ -81,7 +121,6 @@ async function
     taxPercentage,
     fulfillmentType,
     fulfillmentGroups,
-    discountTotal,
     deliveryCharges
   }) {
 
@@ -102,7 +141,7 @@ async function
   const amount = totalAmount + tax;
 
   // Create authorized payments for each
-  const paymentPromises = (paymentsInput || []).map(async (paymentInput, paymentIndex) => {
+  const paymentPromises = (paymentsInput || []).map(async (paymentInput) => {
     const {
       method: methodName
     } = paymentInput;
@@ -122,9 +161,8 @@ async function
       finalAmount = payableAmount;
     }
 
-    // Apply order-level discounts once so the payable amount is reflected correctly.
-    const discountForThisPayment = paymentIndex === 0 ? discountTotal : 0;
-    finalAmount = Math.max(finalAmount - discountForThisPayment, 0);
+    // finalAmount stays the pre-discount total (items + tax + delivery).
+    // The time discount is stored on the order and applied by the client.
 
     // Verify that this payment method is enabled for the shop
     if (!availablePaymentMethods.includes(methodName)) {
@@ -354,8 +392,7 @@ export default async function placeOrder(context, input) {
   // Create orderId
   const orderId = Random.id();
 
-  // First pass: build fulfillment groups to calculate item totals
-  let itemsTotalBeforeDiscount = 0;
+  // First pass: build fulfillment groups so the time discount can use real line prices.
   const initialFulfillmentGroups = await Promise.all(
     fulfillmentGroups.map(async (inputGroup) => {
       const { group, groupSurcharges } =
@@ -374,38 +411,36 @@ export default async function placeOrder(context, input) {
           Longitude,
         });
 
-      // Accumulate items total before any discount
-      itemsTotalBeforeDiscount += (group.invoice.subtotal || 0);
-
       return { group, groupSurcharges };
     })
   );
 
-  const hasDealItem = initialFulfillmentGroups.some(({ group }) =>
-    (group.items || []).some((item) =>
-      item?.isDeal === true || item?.productTagIds?.includes(DEAL_TAG_ID)
-    )
-  ) || (cart?.items || []).some((item) =>
-    item?.isDeal === true || item?.productTagIds?.includes(DEAL_TAG_ID)
-  );
+  // A promo replaces the time discount. Its checkout amount is stored once on
+  // order.discounts and is not also passed as discountTotal, so the invoice cannot
+  // record it a second time. finalPrice is left unchanged.
+  if (cartHasPromoCode(cart)) {
+    discounts.push(...await promoDiscountsForOrder(context, cart));
+  } else {
+    const discountableItemsTotal = sumNonDealItemsTotal(
+      initialFulfillmentGroups,
+      cart?.items || []
+    );
 
-  // Calculate time-based discount using Shop.discount object values.
-  const clientTimeZone = customFieldsFromClient?.timeZone || customFieldsFromClient?.timezone || "Asia/Karachi";
-  const { isDiscountActive, discountAmount } = checkTimeBasedDiscount(
-    itemsTotalBeforeDiscount,
-    clientTimeZone,
-    shop.discount.discountValue,
-    shop.discount.startTime,
-    shop.discount.endTime,
-    hasDealItem
-  );
-  if (isDiscountActive) {
-    const timeBasedDiscountInfo = {
-      amount: discountAmount,
-      discountId: "night-discount-8pm-2am"
-    };
-    discounts.push(timeBasedDiscountInfo);
-    discountTotal += discountAmount;
+    const clientTimeZone = customFieldsFromClient?.timeZone || customFieldsFromClient?.timezone || "Asia/Karachi";
+    const { isDiscountActive, discountAmount } = checkTimeBasedDiscount(
+      discountableItemsTotal,
+      clientTimeZone,
+      shop.discount.discountValue,
+      shop.discount.startTime,
+      shop.discount.endTime
+    );
+    if (isDiscountActive && discountAmount > 0) {
+      discounts.push({
+        amount: discountAmount,
+        discountId: "night-discount-8pm-2am"
+      });
+      discountTotal += discountAmount;
+    }
   }
 
   // Second pass: rebuild groups with updated discount total if time-based discount was applied
@@ -489,7 +524,6 @@ export default async function placeOrder(context, input) {
     taxPercentage,
     fulfillmentType,
     fulfillmentGroups,
-    discountTotal,
     deliveryCharges: deliveryFee
   });
   if (payments[0].totalAmount < 500) {

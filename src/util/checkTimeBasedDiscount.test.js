@@ -1,33 +1,39 @@
-import checkTimeBasedDiscount from "./checkTimeBasedDiscount.js";
+import checkTimeBasedDiscount, { sumNonDealItemsTotal } from "./checkTimeBasedDiscount.js";
 
 describe("checkTimeBasedDiscount", () => {
-  let originalDateNow;
+  let OriginalDate;
 
   beforeEach(() => {
-    // Save the original Date.now
-    originalDateNow = Date.now;
+    OriginalDate = global.Date;
   });
 
   afterEach(() => {
-    // Restore the original Date.now
-    global.Date.now = originalDateNow;
+    global.Date = OriginalDate;
   });
 
-  /**
-   * Helper function to mock the current time
-   */
-  const mockCurrentTime = (hour, minute = 0) => {
-    const mockDate = new Date();
-    mockDate.setHours(hour, minute, 0, 0);
-    global.Date = class extends Date {
-      constructor() {
-        super();
-        return mockDate;
+  const installMockDate = (mockDate) => {
+    global.Date = class extends OriginalDate {
+      constructor(...args) {
+        if (args.length === 0) return new OriginalDate(mockDate.getTime());
+        return new OriginalDate(...args);
       }
       static now() {
         return mockDate.getTime();
       }
     };
+  };
+
+  /**
+   * Helper function to mock the current time in the machine timezone
+   */
+  const mockCurrentTime = (hour, minute = 0) => {
+    const mockDate = new OriginalDate();
+    mockDate.setHours(hour, minute, 0, 0);
+    installMockDate(mockDate);
+  };
+
+  const mockInstant = (isoString) => {
+    installMockDate(new OriginalDate(isoString));
   };
 
   describe("during discount hours (8pm to 2am)", () => {
@@ -157,20 +163,74 @@ describe("checkTimeBasedDiscount", () => {
       expect(result.discountAmount).toBe(5000);
     });
 
-    it("should NOT apply discount when a deal item exists during discount hours", () => {
-      mockCurrentTime(21);
-      const result = checkTimeBasedDiscount(1000, "Asia/Karachi", 10, "8PM", "2AM", true);
-      expect(result.isDiscountActive).toBe(false);
-      expect(result.discountAmount).toBe(0);
-      expect(result.discountPercentage).toBe(0);
+    it("rounds 10% of a 575 ala carte total up to 58 inside a 9AM-2AM window", () => {
+      mockInstant("2026-11-08T05:12:19.711Z"); // 10:12 Asia/Karachi
+      const result = checkTimeBasedDiscount(575, "Asia/Karachi", 10, "9AM", "2AM");
+      expect(result.isDiscountActive).toBe(true);
+      expect(result.discountAmount).toBe(58);
+      expect(result.discountPercentage).toBe(10);
     });
+  });
+});
 
-    it("should still keep discount disabled when a deal item exists outside discount hours", () => {
-      mockCurrentTime(12);
-      const result = checkTimeBasedDiscount(1000, "Asia/Karachi", 10, "8PM", "2AM", true);
-      expect(result.isDiscountActive).toBe(false);
-      expect(result.discountAmount).toBe(0);
-      expect(result.discountPercentage).toBe(0);
-    });
+describe("sumNonDealItemsTotal", () => {
+  const DEAL_TAG_ID = "QxJefMA3viGnquk6Y";
+
+  it("discounts only the ala carte line when a deal is in the same order", () => {
+    const groups = [
+      {
+        group: {
+          items: [
+            {
+              productId: "deal-product",
+              variantId: "deal-variant",
+              productTagIds: [DEAL_TAG_ID],
+              subtotal: 1999,
+              quantity: 1
+            },
+            {
+              productId: "burger",
+              variantId: "burger-variant",
+              productTagIds: [],
+              subtotal: 575,
+              quantity: 1
+            }
+          ]
+        }
+      }
+    ];
+
+    expect(sumNonDealItemsTotal(groups)).toBe(575);
+  });
+
+  it("treats a cart isDeal flag as a deal even when the order line has no deal tag", () => {
+    const groups = [
+      {
+        group: {
+          items: [
+            { productId: "deal-product", variantId: "deal-variant", subtotal: 1999, quantity: 1 },
+            { productId: "burger", variantId: "burger-variant", subtotal: 575, quantity: 1 }
+          ]
+        }
+      }
+    ];
+    const cartItems = [
+      { productId: "deal-product", variantId: "deal-variant", isDeal: true, subtotal: { amount: 1999 } },
+      { productId: "burger", variantId: "burger-variant", isDeal: false, subtotal: { amount: 575 } }
+    ];
+
+    expect(sumNonDealItemsTotal(groups, cartItems)).toBe(575);
+  });
+
+  it("returns 0 when every line is a deal", () => {
+    const groups = [
+      {
+        items: [
+          { productId: "deal-product", isDeal: true, subtotal: 1999, quantity: 1 }
+        ]
+      }
+    ];
+
+    expect(sumNonDealItemsTotal(groups)).toBe(0);
   });
 });
