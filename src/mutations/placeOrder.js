@@ -39,9 +39,9 @@ function cartHasPromoCode(cart) {
 }
 
 /**
- * @summary The promo amount checkout already showed (`cart.discount`), stored once.
- *   Do not recalculate it on top of that value, and do not add it to `discountTotal`.
- *   Writing it in both places is what turned a 70 checkout discount into 140 on the order.
+ * @summary The promo amount checkout already showed (`cart.discount`), as one row.
+ *   The time discount is not added on top. That second copy is what turned a 70
+ *   checkout discount into 140 on the order.
  * @param {Object} context App context
  * @param {Object} cart Cart with a promo billing entry
  * @returns {Promise<Object[]>} One order discount row, or none
@@ -415,11 +415,13 @@ export default async function placeOrder(context, input) {
     })
   );
 
-  // A promo replaces the time discount. Its checkout amount is stored once on
-  // order.discounts and is not also passed as discountTotal, so the invoice cannot
-  // record it a second time. finalPrice is left unchanged.
+  // A promo replaces the time discount. The checkout amount is stored once and
+  // copied onto the invoice so order confirmation summary.discountTotal shows it.
+  // finalPrice is still the pre-discount payment total.
   if (cartHasPromoCode(cart)) {
-    discounts.push(...await promoDiscountsForOrder(context, cart));
+    const promoDiscounts = await promoDiscountsForOrder(context, cart);
+    discounts.push(...promoDiscounts);
+    discountTotal += promoDiscounts.reduce((sum, row) => sum + row.amount, 0);
   } else {
     const discountableItemsTotal = sumNonDealItemsTotal(
       initialFulfillmentGroups,
@@ -779,6 +781,76 @@ export default async function placeOrder(context, input) {
       },
     },
     {
+      $lookup: {
+        from: "Discounts",
+        let: { discountIds: { $ifNull: ["$discounts.discountId", []] } },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $or: [
+                  { $in: [{ $toString: "$_id" }, "$$discountIds"] },
+                  { $in: ["$code", "$$discountIds"] },
+                ],
+              },
+            },
+          },
+          {
+            $project: {
+              _id: 1,
+              code: 1,
+              method: "$calculation.method",
+            },
+          },
+        ],
+        as: "discountCodeDocs",
+      },
+    },
+    {
+      $addFields: {
+        appliedDiscounts: {
+          $map: {
+            input: { $ifNull: ["$discounts", []] },
+            as: "discount",
+            in: {
+              $let: {
+                vars: {
+                  matched: {
+                    $arrayElemAt: [
+                      {
+                        $filter: {
+                          input: "$discountCodeDocs",
+                          as: "doc",
+                          cond: {
+                            $or: [
+                              {
+                                $eq: [
+                                  { $toString: "$$doc._id" },
+                                  { $toString: "$$discount.discountId" },
+                                ],
+                              },
+                              { $eq: ["$$doc.code", "$$discount.discountId"] },
+                            ],
+                          },
+                        },
+                      },
+                      0,
+                    ],
+                  },
+                },
+                in: {
+                  discountId: "$$discount.discountId",
+                  amount: "$$discount.amount",
+                  code: "$$matched.code",
+                  method: "$$matched.method",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    {
       $project: {
         id: "$_id",
         _id: 1,
@@ -790,6 +862,7 @@ export default async function placeOrder(context, input) {
         placedFrom: 1,
         isPaid: 1,
         isGuestUser: 1,
+        appliedDiscounts: 1,
         summary: {
           discountTotal: {
             amount: { $sum: "$discounts.amount" },

@@ -417,7 +417,15 @@ type OrderNew {
   placedFrom: String
   isPaid: Boolean
   isGuestUser: Boolean
+  "Discounts on this order. Promo codes include the code and calculation method."
+  appliedDiscounts: [AppliedOrderDiscount]
   # customerOrderInfo:customerOrderInfoPayload
+}
+type AppliedOrderDiscount {
+  discountId: String
+  code: String
+  method: String
+  amount: Float
 }
 
 "A summary of the totals for this order"
