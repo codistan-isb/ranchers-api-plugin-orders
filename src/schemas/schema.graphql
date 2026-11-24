@@ -424,6 +424,7 @@ type OrderNew {
 type AppliedOrderDiscount {
   discountId: String
   code: String
+  name: String
   method: String
   amount: Float
 }

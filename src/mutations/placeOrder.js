@@ -799,6 +799,7 @@ export default async function placeOrder(context, input) {
             $project: {
               _id: 1,
               code: 1,
+              name: 1,
               method: "$calculation.method",
             },
           },
@@ -842,6 +843,7 @@ export default async function placeOrder(context, input) {
                   discountId: "$$discount.discountId",
                   amount: "$$discount.amount",
                   code: "$$matched.code",
+                  name: "$$matched.name",
                   method: "$$matched.method",
                 },
               },
